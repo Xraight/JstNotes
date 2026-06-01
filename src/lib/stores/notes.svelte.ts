@@ -53,6 +53,18 @@ class NoteStore {
   async getChildren(parentId: string) {
     return await invoke<Note[]>('get_children', { parentId });
   }
+
+  getNoteTitleMap(): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const n of this.notes) {
+      map.set(n.title.toLowerCase(), n.id);
+    }
+    return map;
+  }
+
+  async loadNoteTitles() {
+    this.notes = await invoke<Note[]>('list_notes');
+  }
 }
 
 export const noteStore = new NoteStore();

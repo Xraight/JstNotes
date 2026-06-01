@@ -160,6 +160,16 @@ pub fn persist_settings(app_dir: &str, settings: &AppSettings) -> Result<(), Str
     fs::write(&path, content).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalendarEntry {
+    pub id: String,
+    pub date: String,
+    pub title: String,
+    pub note_id: Option<String>,
+    pub note_title: Option<String>,
+    pub created_at: String,
+}
+
 pub fn build_note_path(notes_dir: &str, id: &str, title: &str, parent_id: Option<&str>) -> String {
     let safe_title = title
         .to_lowercase()

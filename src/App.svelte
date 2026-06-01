@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Breadcrumbs from './lib/components/Breadcrumbs.svelte';
   import NoteTree from './lib/components/NoteTree.svelte';
+  import Calendar from './lib/components/Calendar.svelte';
   import Editor from './lib/components/Editor.svelte';
   import Settings from './lib/components/Settings.svelte';
   import { noteStore } from './lib/stores/notes';
@@ -60,6 +61,7 @@
       <span class="logo">JSTNotes</span>
     </div>
     <NoteTree nodes={tree} />
+    <Calendar />
     <button class="sidebar-resize-handle"
       onmousedown={startDrag}
       aria-label="Resize sidebar"

@@ -65,3 +65,12 @@ export interface AppSettings {
   typography: TypographySettings;
   layout: LayoutSettings;
 }
+
+export interface CalendarEntry {
+  id: string;
+  date: string;
+  title: string;
+  note_id: string | null;
+  note_title: string | null;
+  created_at: string;
+}

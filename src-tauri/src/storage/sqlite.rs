@@ -35,6 +35,17 @@ impl Database {
 
             CREATE INDEX IF NOT EXISTS idx_notes_parent_id ON notes(parent_id);
             CREATE INDEX IF NOT EXISTS idx_notes_path ON notes(path);
+
+            CREATE TABLE IF NOT EXISTS calendar_entries (
+                id TEXT PRIMARY KEY,
+                date TEXT NOT NULL,
+                title TEXT NOT NULL,
+                note_id TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_calendar_date ON calendar_entries(date);
             ",
         )?;
         Ok(())
@@ -183,6 +194,53 @@ impl Database {
             tree.push(self.build_node(&root, &notes));
         }
         Ok(tree)
+    }
+
+    pub fn create_calendar_entry(&self, entry: &CalendarEntry) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO calendar_entries (id, date, title, note_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![entry.id, entry.date, entry.title, entry.note_id, entry.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_calendar_entries(&self, year: i32, month: i32) -> SqlResult<Vec<CalendarEntry>> {
+        let conn = self.conn.lock().unwrap();
+        let prefix = format!("{}-{:02}", year, month);
+        let mut stmt = conn.prepare(
+            "SELECT ce.id, ce.date, ce.title, ce.note_id, n.title, ce.created_at
+             FROM calendar_entries ce
+             LEFT JOIN notes n ON ce.note_id = n.id
+             WHERE ce.date LIKE ?1
+             ORDER BY ce.date, ce.created_at",
+        )?;
+        let rows = stmt.query_map(params![format!("{}%", prefix)], |row| {
+            Ok(CalendarEntry {
+                id: row.get(0)?,
+                date: row.get(1)?,
+                title: row.get(2)?,
+                note_id: row.get(3)?,
+                note_title: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn update_calendar_entry(&self, id: &str, title: &str, note_id: Option<&str>) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE calendar_entries SET title = ?1, note_id = ?2 WHERE id = ?3",
+            params![title, note_id, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_calendar_entry(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM calendar_entries WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     fn build_node(&self, note: &Note, all: &[Note]) -> NoteTreeNode {
