@@ -1,124 +1,113 @@
 # JSTNotes
 
-Aplicación de notas con IA local, anotaciones sobre PDF, y aprendizaje adaptativo.
+A note-taking desktop app with local AI, PDF annotations, adaptive learning, and full UI customization. Built with Tauri v2 + Svelte 5 + TypeScript.
 
-## Stack
+> **Status:** Phase 0 — Core scaffolding complete. Active development.
 
-| Capa | Tecnología |
-|---|---|
-| Desktop | **Tauri v2** (Rust) |
-| Frontend | **Svelte 5 + TypeScript + Vite** |
-| Editor | CodeMirror 6 |
-| Almacenamiento | SQLite (metadatos) + Markdown plano (contenido) |
-| IA local | llama.cpp (inferencia) + fastembed (embeddings) + sqlite-vss (vectores) |
-| PDF | pdf.js (visor) + lopdf (backend) |
+---
 
-## Requisitos
+## Features
 
-- **Node.js** >= 20
-- **Rust** >= 1.77
-- **Tauri CLI** >= 2.0
-- **Conda** environment `JstNotes` (opcional pero recomendado)
+- **Markdown editor** with live split preview
+- **Tree sidebar** with nested notes
+- **Persistent settings** — custom colors, typography, layout
+- **Theme presets** (Midnight, Dracula, Nord, Catppuccin, etc.)
+- **Custom CSS** overlay
+- Hybrid storage: Markdown files + SQLite metadata
+- (Coming) Local AI with RAG, PDF viewer, flashcards, graph view
+
+---
 
 ## Setup
 
-```bash
-git clone <repo> && cd JstNotes
+### Prerequisites
 
-# Instalar dependencias Node
+- [Rust](https://rustup.rs/) (stable)
+- [Node.js](https://nodejs.org/) >= 18
+- Conda environment `JstNotes` (for Python AI models later)
+
+### Quick start
+
+```bash
+git clone <repo-url> && cd JstNotes
+
+# Install Node dependencies
 npm install
 
-# Inicializar conda env (si no existe)
-conda create -n JstNotes nodejs rust -y
-conda activate JstNotes
-
-# Compilar Rust (primer build descarga dependencias)
-npm run tauri build -- --debug
-# O en modo desarrollo:
+# Run in dev mode (Tauri window + hot reload)
 npm run tauri dev
+
+# Or just the web frontend
+npm run dev
 ```
 
-## Arquitectura
+The Rust backend compiles on first run — subsequent launches are faster.
+
+### Conda environment
+
+```bash
+source /home/xraight/anaconda3/bin/activate JstNotes
+```
+
+---
+
+## Project structure
 
 ```
 JstNotes/
-├── src/                          # Frontend Svelte
-│   ├── App.svelte                # Layout principal
-│   ├── app.css                   # Estilos globales + tema
-│   └── lib/
-│       ├── components/           # Componentes UI
-│       │   ├── Breadcrumbs.svelte    # Navegación jerárquica
-│       │   ├── NoteTree.svelte       # Árbol de notas (sidebar)
-│       │   ├── TreeItem.svelte       # Nodo recursivo del árbol
-│       │   ├── Editor.svelte         # Editor Markdown
-│       │   ├── FlashCard.svelte      # (Fase 2) Repaso spaced repetition
-│       │   ├── ChatPanel.svelte      # (Fase 1) Chat IA local
-│       │   ├── GraphView.svelte      # (Fase 6) Grafo de conocimiento
-│       │   ├── PDFViewer.svelte      # (Fase 3) Visor PDF
-│       │   └── Settings.svelte       # (Fase 6) Configuración
-│       ├── stores/               # Estado global (runes)
-│       │   ├── notes.ts              # Estado de notas
-│       │   ├── settings.ts           # Tema, preferencias
-│       │   └── ai.ts                 # Estado del chat IA
-│       └── types.ts              # Tipos compartidos
-├── src-tauri/                    # Backend Rust
+├── src/                    # Frontend (Svelte 5 + TS)
+│   ├── lib/
+│   │   ├── components/     # UI components
+│   │   ├── stores/         # Svelte 5 runes stores
+│   │   ├── types.ts        # Shared TS interfaces
+│   │   └── presets.ts      # Theme presets
+│   ├── App.svelte          # Root layout
+│   └── main.ts             # Entry point
+├── src-tauri/              # Backend (Rust)
 │   └── src/
-│       ├── main.rs / lib.rs          # Entry point Tauri
-│       ├── models.rs                 # Modelos de datos
-│       ├── commands/                 # Comandos IPC
-│       │   ├── notes.rs              # CRUD de notas
-│       │   ├── ai.rs                 # (Fase 1) IA
-│       │   └── pdf.rs                # (Fase 3) PDF
-│       ├── storage/                  # Capa de persistencia
-│       │   ├── sqlite.rs             # SQLite (metadatos)
-│       │   ├── markdown.rs           # Archivos .md (contenido)
-│       │   └── hybrid.rs             # Sincronización SQLite ↔ MD
-│       ├── ai/                       # (Fase 1) Motor IA
-│       └── pdf/                      # (Fase 3) Extracción PDF
-├── models/                       # Modelos IA descargables (gitignored)
-└── static/                       # Assets estáticos
+│       ├── commands/       # Tauri IPC commands
+│       ├── storage/        # Hybrid storage (SQLite + Markdown)
+│       ├── ai/             # AI module (stub)
+│       ├── pdf/            # PDF module (stub)
+│       ├── models.rs       # Data models + serialization
+│       └── lib.rs          # Tauri entry + plugin registration
+├── docs/                   # Architecture docs (`docs/ARCHITECTURE.md`)
+├── package.json
+├── vite.config.ts
+└── opencode.json           # OpenCode agents config
 ```
 
-## Hoja de ruta
+---
 
-| Fase | Duración | Entregable |
-|---|---|---|
-| **0 — Fundación** | Semana 1-4 | App base: editor MD, árbol de notas, breadcrumbs, híbrido SQLite+MD |
-| **1 — IA ligera** | Semana 5-8 | RAG + chat local + selección adaptativa de modelo |
-| **2 — Flashcards** | Semana 9-12 | SM-2, generación IA, active recall, export Anki |
-| **3 — PDF v1** | Semana 13-14 | Biblioteca PDF, enlace nota→página |
-| **4 — PDF v2** | Semana 15-18 | Visor PDF integrado (pdf.js), panel dividido |
-| **5 — PDF v3** | Semana 19-22 | Anotaciones, subrayado, margin notes |
-| **6 — Polishing** | Semana 23-26 | Graph view, temas, layout customizable, plugins |
+## Tech stack
 
-## Comandos
+| Layer | Technology |
+|---|---|
+| Desktop shell | [Tauri v2](https://v2.tauri.app/) |
+| Frontend | [Svelte 5](https://svelte.dev/), TypeScript, Vite |
+| Backend | Rust, [rusqlite](https://github.com/rusqlite/rusqlite) |
+| Storage | SQLite (metadata) + Markdown (content) |
+| Markdown | `pulldown-cmark` (Rust), `marked` (JS preview) |
+| AI (future) | Local LLM via `llama.cpp` or similar |
 
-```bash
-npm run dev            # Servidor de desarrollo Vite
-npm run build          # Build frontend
-npm run check          # Type-check (svelte-check)
-npm run lint           # Linter
-npm run tauri dev      # Desarrollo Tauri (app + frontend)
-npm run tauri build    # Build producción
-```
+---
 
-## Modelo de datos
+## Architecture
 
-Toda nota tiene:
-- `id` (UUID v4)
-- `title`
-- `content` (Markdown)
-- `parent_id` → jerarquía (nullable para raíces)
-- `path` (ruta materializada, ej: `matematicas/calculo/derivadas`)
-- `sort_order`
-- `created_at` / `updated_at`
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details on the project structure, data flow, backend modules, and design decisions.
 
-Los breadcrumbs se generan recorriendo `parent_id` hacia arriba hasta la raíz.
+## Contributing
 
-## Filosofía de diseño
+1. Fork the repo
+2. Create a branch: `git checkout -b feature/your-feature`
+3. Make your changes
+4. Run `npm run build` to verify no errors
+5. Commit and push — PRs welcome
 
-1. **Dificultad adaptable**: El usuario descubre funciones progresivamente, sin saturación inicial.
-2. **IA local y offline**: Todo el procesamiento de IA corre en el equipo del usuario. Sin dependencia de cloud.
-3. **Simbiosis con PDF**: Las notas se enlazan a libros/páginas/párrafos específicos.
-4. **Estructura clara**: No existen notas huérfanas. Todo tiene un rastro (breadcrumbs).
-5. **Personalización completa**: Tema visual, layout, CSS custom.
+Keep it simple: one feature per PR, match existing code style.
+
+---
+
+## License
+
+MIT
