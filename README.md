@@ -104,4 +104,6 @@ Keep it simple: one feature per PR, match existing code style.
 
 ## License
 
-MIT
+PolyForm Noncommercial License 1.0.0 — see [`LICENSE`](LICENSE) for details.
+
+Commercial use requires explicit permission from the author.
