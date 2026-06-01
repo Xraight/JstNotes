@@ -1,0 +1,198 @@
+use rusqlite::{params, Connection, Result as SqlResult};
+use std::sync::Mutex;
+
+use crate::models::*;
+
+pub struct Database {
+    conn: Mutex<Connection>,
+}
+
+impl Database {
+    pub fn new(db_path: &str) -> SqlResult<Self> {
+        let conn = Connection::open(db_path)?;
+        let db = Database {
+            conn: Mutex::new(conn),
+        };
+        db.initialize()?;
+        Ok(db)
+    }
+
+    fn initialize(&self) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS notes (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content_hash TEXT NOT NULL DEFAULT '',
+                parent_id TEXT,
+                path TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (parent_id) REFERENCES notes(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_notes_parent_id ON notes(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_notes_path ON notes(path);
+            ",
+        )?;
+        Ok(())
+    }
+
+    pub fn create_note(&self, note: &Note) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO notes (id, title, content_hash, parent_id, path, sort_order, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                note.id,
+                note.title,
+                "",
+                note.parent_id,
+                note.path,
+                note.sort_order,
+                note.created_at.to_rfc3339(),
+                note.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_note(&self, id: &str) -> SqlResult<Option<Note>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, '', parent_id, path, sort_order, created_at, updated_at FROM notes WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Note {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                content: String::new(),
+                parent_id: row.get(3)?,
+                path: row.get(4)?,
+                sort_order: row.get(5)?,
+                created_at: row.get::<_, String>(6)?.parse().unwrap_or_default(),
+                updated_at: row.get::<_, String>(7)?.parse().unwrap_or_default(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn list_notes(&self) -> SqlResult<Vec<Note>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, '', parent_id, path, sort_order, created_at, updated_at FROM notes ORDER BY sort_order, title",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Note {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                content: String::new(),
+                parent_id: row.get(3)?,
+                path: row.get(4)?,
+                sort_order: row.get(5)?,
+                created_at: row.get::<_, String>(6)?.parse().unwrap_or_default(),
+                updated_at: row.get::<_, String>(7)?.parse().unwrap_or_default(),
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn update_note(&self, note: &Note) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE notes SET title = ?1, content_hash = ?2, parent_id = ?3, path = ?4, sort_order = ?5, updated_at = ?6 WHERE id = ?7",
+            params![
+                note.title,
+                "",
+                note.parent_id,
+                note.path,
+                note.sort_order,
+                note.updated_at.to_rfc3339(),
+                note.id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_note(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn get_children(&self, parent_id: &str) -> SqlResult<Vec<Note>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, '', parent_id, path, sort_order, created_at, updated_at FROM notes WHERE parent_id = ?1 ORDER BY sort_order, title",
+        )?;
+        let rows = stmt.query_map(params![parent_id], |row| {
+            Ok(Note {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                content: String::new(),
+                parent_id: row.get(3)?,
+                path: row.get(4)?,
+                sort_order: row.get(5)?,
+                created_at: row.get::<_, String>(6)?.parse().unwrap_or_default(),
+                updated_at: row.get::<_, String>(7)?.parse().unwrap_or_default(),
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn get_breadcrumbs(&self, note_id: &str) -> SqlResult<Vec<Breadcrumb>> {
+        let conn = self.conn.lock().unwrap();
+        let mut crumbs = Vec::new();
+        let mut current_id = Some(note_id.to_string());
+
+        while let Some(cid) = current_id {
+            let mut stmt = conn.prepare(
+                "SELECT id, title, path FROM notes WHERE id = ?1",
+            )?;
+            let result: Option<(String, String, String)> = stmt
+                .query_row(params![cid], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })
+                .ok();
+
+            if let Some((id, title, path)) = result {
+                crumbs.push(Breadcrumb { id, title, path });
+                let mut parent_stmt = conn.prepare("SELECT parent_id FROM notes WHERE id = ?1")?;
+                current_id = parent_stmt
+                    .query_row(params![cid], |row| row.get(0))
+                    .ok()
+                    .flatten();
+            } else {
+                break;
+            }
+        }
+
+        crumbs.reverse();
+        Ok(crumbs)
+    }
+
+    pub fn build_tree(&self) -> SqlResult<Vec<NoteTreeNode>> {
+        let notes = self.list_notes()?;
+        let root_notes: Vec<Note> = notes.iter().filter(|n| n.parent_id.is_none()).cloned().collect();
+        let mut tree = Vec::new();
+        for root in root_notes {
+            tree.push(self.build_node(&root, &notes));
+        }
+        Ok(tree)
+    }
+
+    fn build_node(&self, note: &Note, all: &[Note]) -> NoteTreeNode {
+        let children: Vec<Note> = all.iter().filter(|n| n.parent_id.as_deref() == Some(&note.id)).cloned().collect();
+        NoteTreeNode {
+            id: note.id.clone(),
+            title: note.title.clone(),
+            path: note.path.clone(),
+            children: children.iter().map(|c| self.build_node(c, all)).collect(),
+            created_at: note.created_at,
+        }
+    }
+}

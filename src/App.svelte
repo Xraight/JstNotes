@@ -1,0 +1,193 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import Breadcrumbs from './lib/components/Breadcrumbs.svelte';
+  import NoteTree from './lib/components/NoteTree.svelte';
+  import Editor from './lib/components/Editor.svelte';
+  import Settings from './lib/components/Settings.svelte';
+  import { noteStore } from './lib/stores/notes';
+  import { settingsStore } from './lib/stores/settings';
+
+  let tree = $derived(noteStore.tree);
+  let breadcrumbs = $derived(noteStore.breadcrumbs);
+  let selectedNote = $derived(noteStore.selectedNote);
+  let sidebarWidth = $derived(settingsStore.settings.layout.sidebar_width);
+  let settingsOpen = $state(false);
+  let error = $state<string | null>(null);
+  let dragging = $state(false);
+
+  onMount(async () => {
+    await settingsStore.load();
+    try {
+      await noteStore.loadTree();
+    } catch (e: unknown) {
+      error = `Error: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  });
+
+  function startDrag(e: MouseEvent) {
+    dragging = true;
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    function onMouseMove(ev: MouseEvent) {
+      const newWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
+      settingsStore.setSidebarWidth(newWidth);
+    }
+
+    function onMouseUp() {
+      dragging = false;
+      settingsStore.saveSidebarWidth(settingsStore.settings.layout.sidebar_width);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+</script>
+
+{#if error}
+  <div class="error-overlay">
+    <h2>Connection Error</h2>
+    <p>{error}</p>
+    <p style="font-size:13px;color:var(--text-secondary);">Make sure you're running inside Tauri (npm run tauri dev)</p>
+  </div>
+{/if}
+
+<div class="app-shell" class:dragging>
+  <div class="sidebar" style="width: {sidebarWidth}px;">
+    <div class="sidebar-header">
+      <span class="logo">JSTNotes</span>
+    </div>
+    <NoteTree nodes={tree} />
+    <button class="sidebar-resize-handle"
+      onmousedown={startDrag}
+      aria-label="Resize sidebar"
+      onkeydown={(e) => {
+        if (e.key === 'ArrowLeft') settingsStore.setSidebarWidth(sidebarWidth - 20);
+        if (e.key === 'ArrowRight') settingsStore.setSidebarWidth(sidebarWidth + 20);
+      }}>
+    </button>
+  </div>
+  <div class="main">
+    <Breadcrumbs items={breadcrumbs} />
+    <div class="editor-area">
+      <Editor />
+    </div>
+  </div>
+  <div class="status-bar">
+    <span class="status-left">
+      {#if selectedNote}
+        {selectedNote.title}
+      {:else}
+        No note selected
+      {/if}
+    </span>
+    <span class="status-right">
+      <button class="icon-button" onclick={() => settingsOpen = !settingsOpen} title="Settings">⚙</button>
+    </span>
+  </div>
+</div>
+
+{#if settingsOpen}
+  <Settings onclose={() => settingsOpen = false} />
+{/if}
+
+<style>
+  .error-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    z-index: 1000;
+    gap: 12px;
+  }
+  .error-overlay h2 {
+    color: var(--highlight);
+  }
+  .app-shell {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+  }
+  .sidebar {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-secondary);
+    position: relative;
+    user-select: none;
+  }
+  .dragging .sidebar {
+    transition: none;
+  }
+  .sidebar-header {
+    padding: 14px 20px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    color: var(--highlight);
+  }
+  .sidebar-resize-handle {
+    position: absolute;
+    right: -3px;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 10;
+    background: transparent;
+    border: none;
+    padding: 0;
+    outline: none;
+  }
+  .sidebar-resize-handle:hover,
+  .dragging .sidebar-resize-handle {
+    background: var(--highlight);
+    opacity: 0.3;
+  }
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .editor-area {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    height: 28px;
+    flex-shrink: 0;
+  }
+  .icon-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+  }
+  .icon-button:hover {
+    background: var(--accent);
+    color: var(--text-primary);
+  }
+</style>

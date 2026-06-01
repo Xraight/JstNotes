@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "name": "JSTNotes",
+  "description": "Note-taking app with local AI, PDF annotations, and adaptive learning",
+  "commands": {
+    "build": "npm run build",
+    "dev": "npm run tauri dev",
+    "lint": "npm run lint",
+    "typecheck": "npm run check"
+  },
+  "agents": [
+    {
+      "name": "frontend",
+      "description": "Specialist in Svelte 5, TypeScript, and UI components. Knows the component tree, stores, and styling conventions.",
+      "system": "You are a Svelte 5 expert. Use runes ($state, $derived, $effect) instead of old reactive syntax. Components go in src/lib/components/. Never add comments. Follow existing patterns."
+    },
+    {
+      "name": "backend",
+      "description": "Specialist in Rust, Tauri commands, SQLite, and the hybrid storage layer.",
+      "system": "You are a Rust/Tauri expert. Tauri commands go in src-tauri/src/commands/. Use rusqlite for SQLite. The storage layer syncs MD files with SQLite metadata. Use llama-cpp-rs for AI inference."
+    },
+    {
+      "name": "ai-engine",
+      "description": "Specialist in local LLM inference, RAG pipelines, embeddings, and model management.",
+      "system": "You build the AI engine. Use llama-cpp-rs for inference, fastembed-rs or ort for embeddings, sqlite-vss for vector search. Adaptive model selection based on available RAM. All must work fully offline."
+    }
+  ],
+  "customizations": {
+    "colors": {
+      "text-primary": "#E0E0E0",
+      "text-secondary": "#A0A0A0",
+      "bg-primary": "#1A1A2E",
+      "bg-secondary": "#16213E",
+      "accent": "#0F3460",
+      "highlight": "#E94560"
+    }
+  }
+}
