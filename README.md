@@ -43,12 +43,6 @@ npm run dev
 
 The Rust backend compiles on first run — subsequent launches are faster.
 
-### Conda environment
-
-```bash
-source /home/xraight/anaconda3/bin/activate JstNotes
-```
-
 ---
 
 ## Project structure
