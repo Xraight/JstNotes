@@ -55,11 +55,17 @@
     }],
   });
 
-  function renderContent(raw: string): string {
+  let mentionMap = $state<[string, string][]>([]);
+
+  $effect(() => {
     const map = noteStore.getNoteTitleMap();
+    mentionMap = [...map.entries()].sort((a, b) => b[0].length - a[0].length);
+  });
+
+  function renderContent(raw: string): string {
+    if (!raw.includes('@')) return raw;
     let result = raw;
-    const sorted = [...map.entries()].sort((a, b) => b[0].length - a[0].length);
-    for (const [titleLower, id] of sorted) {
+    for (const [titleLower, id] of mentionMap) {
       const regex = new RegExp(`(?<!\\w)@(${escapeRegex(titleLower)})(?!\\w)`, 'gi');
       result = result.replace(regex, (_, matched) => {
         return `<a href="note:${id}" class="mention" data-note-id="${id}">@${matched}</a>`;

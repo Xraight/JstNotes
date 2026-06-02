@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use rusqlite::{params, Connection, Result as SqlResult};
 use std::sync::Mutex;
 
@@ -90,6 +91,13 @@ impl Database {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn list_note_titles(&self) -> SqlResult<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, title FROM notes ORDER BY title")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
     }
 
     pub fn list_notes(&self) -> SqlResult<Vec<Note>> {
@@ -188,12 +196,25 @@ impl Database {
 
     pub fn build_tree(&self) -> SqlResult<Vec<NoteTreeNode>> {
         let notes = self.list_notes()?;
-        let root_notes: Vec<Note> = notes.iter().filter(|n| n.parent_id.is_none()).cloned().collect();
-        let mut tree = Vec::new();
-        for root in root_notes {
-            tree.push(self.build_node(&root, &notes));
+        let mut map: HashMap<Option<String>, Vec<Note>> = HashMap::new();
+        for note in notes {
+            map.entry(note.parent_id.clone()).or_default().push(note);
         }
-        Ok(tree)
+        fn build_node(parent_id: Option<&str>, map: &HashMap<Option<String>, Vec<Note>>) -> Vec<NoteTreeNode> {
+            let Some(children) = map.get(&parent_id.map(|s| s.to_string())) else {
+                return Vec::new();
+            };
+            children.iter().map(|c| {
+                NoteTreeNode {
+                    id: c.id.clone(),
+                    title: c.title.clone(),
+                    path: c.path.clone(),
+                    children: build_node(Some(&c.id), map),
+                    created_at: c.created_at,
+                }
+            }).collect()
+        }
+        Ok(build_node(None, &map))
     }
 
     pub fn create_calendar_entry(&self, entry: &CalendarEntry) -> SqlResult<()> {

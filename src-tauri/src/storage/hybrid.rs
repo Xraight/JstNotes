@@ -88,6 +88,10 @@ impl HybridStorage {
         self.db.list_notes().map_err(|e| format!("DB error: {}", e))
     }
 
+    pub fn list_note_titles(&self) -> Result<Vec<(String, String)>, String> {
+        self.db.list_note_titles().map_err(|e| format!("DB error: {}", e))
+    }
+
     pub fn get_children(&self, parent_id: &str) -> Result<Vec<Note>, String> {
         self.db
             .get_children(parent_id)
