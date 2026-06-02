@@ -12,6 +12,8 @@
   let breadcrumbs = $derived(noteStore.breadcrumbs);
   let selectedNote = $derived(noteStore.selectedNote);
   let sidebarWidth = $derived(settingsStore.settings.layout.sidebar_width);
+  let sidebarRef = $state<HTMLDivElement>();
+  let calRef = $state<HTMLElement | null>(null);
   let settingsOpen = $state(false);
   let error = $state<string | null>(null);
   let dragging = $state(false);
@@ -23,16 +25,24 @@
     } catch (e: unknown) {
       error = `Error: ${e instanceof Error ? e.message : String(e)}`;
     }
+    if (sidebarRef) calRef = sidebarRef.querySelector<HTMLElement>('[data-calendar]');
   });
 
   function startDrag(e: MouseEvent) {
     dragging = true;
     const startX = e.clientX;
     const startWidth = sidebarWidth;
+    if (!calRef && sidebarRef) {
+      calRef = sidebarRef.querySelector<HTMLElement>('[data-calendar]');
+    }
 
     function onMouseMove(ev: MouseEvent) {
       const newWidth = Math.max(180, Math.min(500, startWidth + ev.clientX - startX));
       settingsStore.setSidebarWidth(newWidth);
+      if (sidebarRef) {
+        sidebarRef.style.width = newWidth + 'px';
+        if (calRef) calRef.style.width = newWidth + 'px';
+      }
     }
 
     function onMouseUp() {
@@ -56,7 +66,7 @@
 {/if}
 
 <div class="app-shell" class:dragging>
-  <div class="sidebar" style="width: {sidebarWidth}px;">
+  <div class="sidebar" bind:this={sidebarRef} style="width: {sidebarWidth}px;">
     <div class="sidebar-header">
       <span class="logo">JSTNotes</span>
     </div>
@@ -126,6 +136,8 @@
     background: var(--bg-secondary);
     position: relative;
     user-select: none;
+    overflow: hidden;
+    min-width: 0;
   }
   .dragging .sidebar {
     transition: none;
@@ -140,10 +152,10 @@
   }
   .sidebar-resize-handle {
     position: absolute;
-    right: -3px;
+    right: 0;
     top: 0;
     bottom: 0;
-    width: 6px;
+    width: 8px;
     cursor: col-resize;
     z-index: 10;
     background: transparent;

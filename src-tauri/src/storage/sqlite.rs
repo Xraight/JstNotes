@@ -37,18 +37,43 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_notes_parent_id ON notes(parent_id);
             CREATE INDEX IF NOT EXISTS idx_notes_path ON notes(path);
 
+            CREATE TABLE IF NOT EXISTS calendar_events (
+                id TEXT PRIMARY KEY,
+                date TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                completed INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS event_notes (
+                event_id TEXT NOT NULL,
+                note_id TEXT NOT NULL,
+                PRIMARY KEY (event_id, note_id),
+                FOREIGN KEY (event_id) REFERENCES calendar_events(id) ON DELETE CASCADE,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_calendar_date ON calendar_events(date);
+            CREATE INDEX IF NOT EXISTS idx_event_notes_event ON event_notes(event_id);
+            CREATE INDEX IF NOT EXISTS idx_event_notes_note ON event_notes(note_id);
+
+            -- migrate old entries if upgrading
             CREATE TABLE IF NOT EXISTS calendar_entries (
                 id TEXT PRIMARY KEY,
                 date TEXT NOT NULL,
                 title TEXT NOT NULL,
                 note_id TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE SET NULL
+                created_at TEXT NOT NULL
             );
-
-            CREATE INDEX IF NOT EXISTS idx_calendar_date ON calendar_entries(date);
+            INSERT OR IGNORE INTO calendar_events (id, date, title, description, completed, created_at)
+                SELECT id, date, title, '', 0, created_at FROM calendar_entries;
+            INSERT OR IGNORE INTO event_notes (event_id, note_id)
+                SELECT id, note_id FROM calendar_entries WHERE note_id IS NOT NULL;
             ",
         )?;
+        // drop old table schema after migrating data
+        conn.execute_batch("DROP TABLE IF EXISTS calendar_entries;").ok();
         Ok(())
     }
 
@@ -217,51 +242,113 @@ impl Database {
         Ok(build_node(None, &map))
     }
 
-    pub fn create_calendar_entry(&self, entry: &CalendarEntry) -> SqlResult<()> {
+    pub fn create_calendar_event(&self, event: &CalendarEvent, note_ids: &[String]) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO calendar_entries (id, date, title, note_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![entry.id, entry.date, entry.title, entry.note_id, entry.created_at],
+            "INSERT INTO calendar_events (id, date, title, description, completed, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![event.id, event.date, event.title, event.description, event.completed as i32, event.created_at],
         )?;
+        for nid in note_ids {
+            conn.execute(
+                "INSERT OR IGNORE INTO event_notes (event_id, note_id) VALUES (?1, ?2)",
+                params![event.id, nid],
+            )?;
+        }
         Ok(())
     }
 
-    pub fn get_calendar_entries(&self, year: i32, month: i32) -> SqlResult<Vec<CalendarEntry>> {
+    pub fn get_calendar_events(&self, year: i32, month: i32) -> SqlResult<Vec<CalendarEvent>> {
         let conn = self.conn.lock().unwrap();
-        let prefix = format!("{}-{:02}", year, month);
+        let prefix = format!("{}-{:02}%", year, month);
         let mut stmt = conn.prepare(
-            "SELECT ce.id, ce.date, ce.title, ce.note_id, n.title, ce.created_at
-             FROM calendar_entries ce
-             LEFT JOIN notes n ON ce.note_id = n.id
-             WHERE ce.date LIKE ?1
-             ORDER BY ce.date, ce.created_at",
+            "SELECT id, date, title, description, completed, created_at
+             FROM calendar_events
+             WHERE date LIKE ?1
+             ORDER BY date, created_at",
         )?;
-        let rows = stmt.query_map(params![format!("{}%", prefix)], |row| {
-            Ok(CalendarEntry {
+        let mut events: Vec<CalendarEvent> = stmt.query_map(params![prefix], |row| {
+            Ok(CalendarEvent {
                 id: row.get(0)?,
                 date: row.get(1)?,
                 title: row.get(2)?,
-                note_id: row.get(3)?,
-                note_title: row.get(4)?,
+                description: row.get(3)?,
+                completed: row.get::<_, i32>(4)? != 0,
+                note_ids: Vec::new(),
                 created_at: row.get(5)?,
             })
-        })?;
-        rows.collect()
+        })?.collect::<SqlResult<Vec<_>>>()?;
+
+        for ev in &mut events {
+            let mut nstmt = conn.prepare("SELECT note_id FROM event_notes WHERE event_id = ?1")?;
+            let ids: Vec<String> = nstmt.query_map(params![ev.id], |row| row.get(0))?
+                .collect::<SqlResult<Vec<_>>>()?;
+            ev.note_ids = ids;
+        }
+        Ok(events)
     }
 
-    pub fn update_calendar_entry(&self, id: &str, title: &str, note_id: Option<&str>) -> SqlResult<()> {
+    pub fn update_calendar_event(&self, id: &str, title: &str, description: &str, completed: bool) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE calendar_entries SET title = ?1, note_id = ?2 WHERE id = ?3",
-            params![title, note_id, id],
+            "UPDATE calendar_events SET title = ?1, description = ?2, completed = ?3 WHERE id = ?4",
+            params![title, description, completed as i32, id],
         )?;
         Ok(())
     }
 
-    pub fn delete_calendar_entry(&self, id: &str) -> SqlResult<()> {
+    pub fn delete_calendar_event(&self, id: &str) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM calendar_entries WHERE id = ?1", params![id])?;
+        conn.execute("DELETE FROM event_notes WHERE event_id = ?1", params![id])?;
+        conn.execute("DELETE FROM calendar_events WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn link_note_to_event(&self, event_id: &str, note_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO event_notes (event_id, note_id) VALUES (?1, ?2)",
+            params![event_id, note_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn unlink_note_from_event(&self, event_id: &str, note_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM event_notes WHERE event_id = ?1 AND note_id = ?2",
+            params![event_id, note_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_events_for_note(&self, note_id: &str) -> SqlResult<Vec<CalendarEvent>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT ce.id, ce.date, ce.title, ce.description, ce.completed, ce.created_at
+             FROM calendar_events ce
+             JOIN event_notes en ON en.event_id = ce.id
+             WHERE en.note_id = ?1
+             ORDER BY ce.date",
+        )?;
+        let mut events: Vec<CalendarEvent> = stmt.query_map(params![note_id], |row| {
+            Ok(CalendarEvent {
+                id: row.get(0)?,
+                date: row.get(1)?,
+                title: row.get(2)?,
+                description: row.get(3)?,
+                completed: row.get::<_, i32>(4)? != 0,
+                note_ids: Vec::new(),
+                created_at: row.get(5)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+
+        for ev in &mut events {
+            let mut nstmt = conn.prepare("SELECT note_id FROM event_notes WHERE event_id = ?1")?;
+            let ids: Vec<String> = nstmt.query_map(params![ev.id], |row| row.get(0))?
+                .collect::<SqlResult<Vec<_>>>()?;
+            ev.note_ids = ids;
+        }
+        Ok(events)
     }
 
     fn build_node(&self, note: &Note, all: &[Note]) -> NoteTreeNode {

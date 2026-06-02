@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settingsStore } from '../stores/settings';
-  import { THEME_PRESETS, type ThemePreset } from '../presets';
+  import { THEME_PRESETS, FONT_PRESETS, type ThemePreset } from '../presets';
   import type { ColorSettings, TypographySettings, LayoutSettings } from '../types';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -13,6 +13,21 @@
   let tempLayout = $state<LayoutSettings>({ sidebar_width: 280 });
   let customCSS = $state('');
   let previewPreset = $state<ThemePreset | null>(null);
+  let previewFont = $state<string | null>(null);
+  let activeFontId = $derived(FONT_PRESETS.find(fp =>
+    s.typography.font_family === fp.font_family &&
+    s.typography.font_family_mono === fp.font_family_mono
+  )?.id ?? null);
+  let loadedFonts = new Set<string>();
+
+  function loadGoogleFont(family: string): void {
+    if (loadedFonts.has(family)) return;
+    loadedFonts.add(family);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${family}&display=swap`;
+    document.head.appendChild(link);
+  }
 
   $effect(() => {
     tempColors = deepCopy(s.colors);
@@ -47,6 +62,12 @@
   function applyTypo() {
     settingsStore.settings.typography = deepCopy(tempTypo);
     settingsStore.save();
+  }
+
+  function applyTypoWith(font: string, mono: string) {
+    settingsStore.settings.typography.font_family = font;
+    settingsStore.settings.typography.font_family_mono = mono;
+    settingsStore.applyTheme();
   }
 
   function applyLayout() {
@@ -130,12 +151,11 @@
 
     <div class="panel-body">
       {#if activeTab === 'presets'}
-        <div class="preset-grid">
+        <div class="preset-grid" onmouseleave={() => previewPresetTheme(null)}>
           {#each THEME_PRESETS as preset}
             <button class="preset-card"
               class:selected={previewPreset?.id === preset.id}
               onmouseenter={() => previewPresetTheme(preset)}
-              onmouseleave={() => previewPresetTheme(null)}
               onclick={() => applyPreset(preset)}>
               <div class="preset-swatches">
                 {#each Object.values(preset.settings.colors) as color}
@@ -185,13 +205,50 @@
 
       {#if activeTab === 'typography'}
         <div class="section">
-          <h3>Interface Font</h3>
+          <h3>Font Presets</h3>
+          <p class="hint">Click a preset to preview, click again to apply. Custom values below are always available.</p>
+          <div class="font-grid" onmouseleave={() => { previewFont = null; applyTypo(); }}>
+            {#each FONT_PRESETS as fp}
+              <button class="font-card"
+                class:selected={previewFont === fp.id || activeFontId === fp.id}
+                onmouseenter={() => {
+                  previewFont = fp.id;
+                  if (fp.google_font) loadGoogleFont(fp.google_font);
+                  applyTypoWith(fp.font_family, fp.font_family_mono);
+                }}
+                onclick={() => {
+                  tempTypo.font_family = fp.font_family;
+                  tempTypo.font_family_mono = fp.font_family_mono;
+                  if (fp.google_font) loadGoogleFont(fp.google_font);
+                  previewFont = null;
+                  applyTypo();
+                }}>
+                <span class="font-card-name">{fp.name}</span>
+                <span class="font-preview" style="font-family: {fp.font_family};">{fp.preview}</span>
+                <span class="font-mono-preview" style="font-family: {fp.font_family_mono};">console.log("hi")</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="section font-preview-section">
+          <h3>Live Preview</h3>
+          <div class="preview-sans" style="font-family: {tempTypo.font_family}; font-size: {tempTypo.font_size}px; line-height: {tempTypo.line_height};">
+            The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.
+          </div>
+          <div class="preview-mono" style="font-family: {tempTypo.font_family_mono}; font-size: {tempTypo.font_size}px; line-height: {tempTypo.line_height};">
+            const hello = "world";  // monospace preview
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Interface Font (custom)</h3>
           <input type="text" value={tempTypo.font_family} class="text-input"
             onchange={(e) => { tempTypo.font_family = e.currentTarget.value; applyTypo(); }} />
         </div>
 
         <div class="section">
-          <h3>Editor Font</h3>
+          <h3>Editor Font (custom)</h3>
           <input type="text" value={tempTypo.font_family_mono} class="text-input"
             onchange={(e) => { tempTypo.font_family_mono = e.currentTarget.value; applyTypo(); }} />
         </div>
@@ -260,8 +317,8 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 12px;
-    width: 580px;
-    max-height: 85vh;
+    width: 680px;
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
     box-shadow: 0 20px 60px rgba(0,0,0,0.5);
@@ -342,6 +399,72 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  .font-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .font-card {
+    background: var(--bg-primary);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.15s;
+    overflow: hidden;
+  }
+  .font-card:hover, .font-card.selected {
+    border-color: var(--highlight);
+  }
+  .font-card-name {
+    display: block;
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+  }
+  .font-preview {
+    display: block;
+    font-size: 13px;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 1px;
+  }
+  .font-mono-preview {
+    display: block;
+    font-size: 10px;
+    line-height: 1.3;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .font-preview-section {
+    background: var(--bg-primary);
+    border-radius: 8px;
+    padding: 12px 16px;
+  }
+  .font-preview-section h3 {
+    margin-bottom: 8px;
+  }
+  .preview-sans {
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    color: var(--text-primary);
+  }
+  .preview-mono {
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    color: var(--text-secondary);
   }
   .preset-card {
     background: var(--bg-primary);

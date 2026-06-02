@@ -66,6 +66,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 11px;
+    font-family: inherit;
     padding: 0;
     width: 16px;
     flex-shrink: 0;
@@ -95,6 +96,7 @@
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 14px;
+    font-family: inherit;
     padding: 0 4px;
     line-height: 1;
   }

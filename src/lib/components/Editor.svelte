@@ -1,5 +1,6 @@
 <script lang="ts">
   import { noteStore } from '../stores/notes';
+  import { calendarStore } from '../stores/calendar';
   import { Marked } from 'marked';
   import katex from 'katex';
   import 'katex/dist/katex.min.css';
@@ -15,6 +16,9 @@
   let mentionQuery = $state('');
   let mentionIdx = $state(0);
   let noteTitles = $state<string[]>([]);
+  let linkedEvents = $state<import('../types').CalendarEvent[]>([]);
+  let linkDropdownOpen = $state(false);
+  let allUpcomingEvents = $state<import('../types').CalendarEvent[]>([]);
   let mentionFiltered = $derived(
     noteTitles.filter(t => t.toLowerCase().includes(mentionQuery.toLowerCase()))
   );
@@ -96,6 +100,29 @@
     }
     noteTitles = noteStore.notes.map(n => n.title);
   });
+
+  $effect(() => {
+    if (note?.id) {
+      calendarStore.getEventsForNote(note.id).then(evs => { linkedEvents = evs; });
+    } else {
+      linkedEvents = [];
+    }
+  });
+
+  $effect(() => {
+    if (note && allUpcomingEvents.length === 0) {
+      const now = new Date();
+      calendarStore.loadEvents(now.getFullYear(), now.getMonth() + 1)
+        .then(() => { allUpcomingEvents = calendarStore.events.filter(e => !e.completed); });
+    }
+  });
+
+  async function linkToEvent(eventId: string) {
+    if (!note) return;
+    await calendarStore.linkNote(eventId, note.id);
+    linkedEvents = await calendarStore.getEventsForNote(note.id);
+    linkDropdownOpen = false;
+  }
 
   function scheduleSave() {
     if (!note) return;
@@ -263,6 +290,34 @@
       oninput={handleTitleInput}
       placeholder="Note title..."
     />
+    <div class="event-bar">
+      <span class="event-bar-label">📅</span>
+      {#if linkedEvents.length > 0}
+        {#each linkedEvents as ev}
+          <span class="event-badge" class:done={ev.completed} title={ev.description || ev.title}>
+            {ev.title} <span class="event-date">{ev.date}</span>
+          </span>
+        {/each}
+      {:else}
+        <span class="no-events">No events linked</span>
+      {/if}
+      <div class="link-wrapper">
+        <button class="link-btn" onclick={() => linkDropdownOpen = !linkDropdownOpen}>+ Link</button>
+        {#if linkDropdownOpen}
+          <div class="link-dropdown">
+            {#if allUpcomingEvents.length === 0}
+              <span class="link-empty">No upcoming events — create one in the calendar</span>
+            {:else}
+              {#each allUpcomingEvents as ev}
+                <button class="link-option" onclick={() => linkToEvent(ev.id)}>
+                  {ev.title} <span class="link-date">{ev.date}</span>
+                </button>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </div>
     <div class="fmt-toolbar">
       <button class="fmt-btn" onclick={() => applyFormat('bold')} title="Bold (Ctrl+B)"><b>B</b></button>
       <button class="fmt-btn" onclick={() => applyFormat('italic')} title="Italic (Ctrl+I)"><i>I</i></button>
@@ -331,6 +386,7 @@
     flex-direction: column;
     height: 100%;
     background: var(--bg-primary);
+    font-family: var(--font-sans);
   }
   .toolbar {
     display: flex;
@@ -338,6 +394,7 @@
     padding: 6px 20px;
     border-bottom: 1px solid var(--border);
     gap: 12px;
+    font-family: var(--font-sans);
   }
   .view-toggle {
     background: var(--bg-secondary);
@@ -345,6 +402,7 @@
     border-radius: 6px;
     padding: 4px 12px;
     font-size: 12px;
+    font-family: inherit;
     cursor: pointer;
     color: var(--text-secondary);
   }
@@ -363,6 +421,90 @@
     background: var(--bg-secondary);
     padding: 1px 4px;
     border-radius: 3px;
+  }
+  .event-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 24px;
+    font-size: 13px;
+    font-family: var(--font-sans);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+  .event-bar-label {
+    flex-shrink: 0;
+  }
+  .event-badge {
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+  .event-badge.done {
+    opacity: 0.5;
+    text-decoration: line-through;
+  }
+  .event-date {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .no-events {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+  .link-wrapper {
+    position: relative;
+    margin-left: auto;
+  }
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--accent);
+  }
+  .link-btn:hover {
+    text-decoration: underline;
+  }
+  .link-dropdown {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    max-height: 200px;
+    overflow-y: auto;
+    min-width: 200px;
+    z-index: 100;
+    margin-top: 6px;
+  }
+  .link-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px 14px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .link-option:hover {
+    background: var(--accent);
+  }
+  .link-date {
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-left: 8px;
+  }
+  .link-empty {
+    display: block;
+    padding: 10px 14px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-style: italic;
   }
   .fmt-toolbar {
     display: flex;
@@ -399,6 +541,7 @@
     padding: 12px 24px;
     font-size: 22px;
     font-weight: 700;
+    font-family: var(--font-sans);
     background: transparent;
     color: var(--text-primary);
     outline: none;

@@ -45,6 +45,9 @@
     flex-direction: column;
     flex: 1;
     overflow: hidden;
+    min-width: 0;
+    width: 100%;
+    font-family: var(--font-sans);
   }
   .tree-header {
     display: flex;
@@ -63,6 +66,7 @@
     color: var(--text-primary);
     cursor: pointer;
     font-size: 18px;
+    font-family: inherit;
     padding: 2px 8px;
     border-radius: 4px;
   }

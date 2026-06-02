@@ -7,6 +7,81 @@ export interface ThemePreset {
   settings: AppSettings;
 }
 
+export interface FontPreset {
+  id: string;
+  name: string;
+  font_family: string;
+  font_family_mono: string;
+  google_font?: string;
+  preview: string;
+}
+
+export const FONT_PRESETS: FontPreset[] = [
+  {
+    id: 'system',
+    name: 'System',
+    font_family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    font_family_mono: "'JetBrains Mono', 'Fira Code', monospace",
+    preview: 'Aa — System default sans-serif',
+  },
+  {
+    id: 'inter',
+    name: 'Inter',
+    font_family: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    font_family_mono: "'JetBrains Mono', 'Fira Code', monospace",
+    google_font: 'Inter:wght@400;500;600;700',
+    preview: 'Aa — Inter sans-serif',
+  },
+  {
+    id: 'merriweather',
+    name: 'Merriweather',
+    font_family: "'Merriweather', Georgia, 'Times New Roman', serif",
+    font_family_mono: "'Source Code Pro', 'Fira Code', monospace",
+    google_font: 'Merriweather:wght@400;700',
+    preview: 'Aa — Merriweather serif',
+  },
+  {
+    id: 'space-mono',
+    name: 'Space Mono',
+    font_family: "'Space Mono', 'Courier New', monospace",
+    font_family_mono: "'Space Mono', 'Courier New', monospace",
+    google_font: 'Space+Mono:wght@400;700',
+    preview: 'Aa — Space Mono (mono UI)',
+  },
+  {
+    id: 'ubuntu',
+    name: 'Ubuntu',
+    font_family: "'Ubuntu', 'Segoe UI', sans-serif",
+    font_family_mono: "'Ubuntu Mono', 'Fira Code', monospace",
+    google_font: 'Ubuntu:wght@400;500;700',
+    preview: 'Aa — Ubuntu sans-serif',
+  },
+  {
+    id: 'atkinson',
+    name: 'Atkinson',
+    font_family: "'Atkinson Hyperlegible', sans-serif",
+    font_family_mono: "'IBM Plex Mono', 'JetBrains Mono', monospace",
+    google_font: 'Atkinson+Hyperlegible:wght@400;700',
+    preview: 'Aa — Atkinson Hyperlegible',
+  },
+  {
+    id: 'jetbrains',
+    name: 'JetBrains Mono',
+    font_family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    font_family_mono: "'JetBrains Mono', 'Fira Code', monospace",
+    google_font: 'JetBrains+Mono:wght@400;500;700',
+    preview: 'Aa — Default UI + JetBrains Mono',
+  },
+  {
+    id: 'fira-code',
+    name: 'Fira Code',
+    font_family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    font_family_mono: "'Fira Code', 'JetBrains Mono', monospace",
+    google_font: 'Fira+Code:wght@400;500;700',
+    preview: 'Aa — Default UI + Fira Code',
+  },
+];
+
 export const THEME_PRESETS: ThemePreset[] = [
   {
     id: 'midnight',

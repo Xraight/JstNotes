@@ -161,12 +161,13 @@ pub fn persist_settings(app_dir: &str, settings: &AppSettings) -> Result<(), Str
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CalendarEntry {
+pub struct CalendarEvent {
     pub id: String,
     pub date: String,
     pub title: String,
-    pub note_id: Option<String>,
-    pub note_title: Option<String>,
+    pub description: String,
+    pub completed: bool,
+    pub note_ids: Vec<String>,
     pub created_at: String,
 }
 

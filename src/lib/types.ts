@@ -66,11 +66,12 @@ export interface AppSettings {
   layout: LayoutSettings;
 }
 
-export interface CalendarEntry {
+export interface CalendarEvent {
   id: string;
   date: string;
   title: string;
-  note_id: string | null;
-  note_title: string | null;
+  description: string;
+  completed: boolean;
+  note_ids: string[];
   created_at: string;
 }

@@ -59,10 +59,13 @@ pub fn run() {
             commands::pdf::import_pdf,
             commands::settings::get_settings,
             commands::settings::save_settings,
-            commands::calendar::create_calendar_entry,
-            commands::calendar::get_calendar_entries,
-            commands::calendar::update_calendar_entry,
-            commands::calendar::delete_calendar_entry,
+            commands::calendar::create_calendar_event,
+            commands::calendar::get_calendar_events,
+            commands::calendar::update_calendar_event,
+            commands::calendar::delete_calendar_event,
+            commands::calendar::link_note_to_event,
+            commands::calendar::unlink_note_from_event,
+            commands::calendar::get_events_for_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
