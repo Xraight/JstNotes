@@ -171,6 +171,50 @@ pub struct CalendarEvent {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfMetadata {
+    pub id: String,
+    pub title: Option<String>,
+    pub file_path: String,
+    pub page_count: i32,
+    pub text: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfAnnotation {
+    pub id: String,
+    pub pdf_id: String,
+    pub page: i32,
+    pub annotation_type: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub color: Option<String>,
+    pub content: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnnotationInput {
+    pub pdf_id: String,
+    pub page: i32,
+    pub annotation_type: String,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub color: Option<String>,
+    pub content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfNoteLink {
+    pub note_id: String,
+    pub pdf_id: String,
+}
+
 pub fn build_note_path(notes_dir: &str, id: &str, title: &str, parent_id: Option<&str>) -> String {
     let safe_title = title
         .to_lowercase()

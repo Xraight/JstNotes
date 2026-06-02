@@ -4,9 +4,11 @@
   import NoteTree from './lib/components/NoteTree.svelte';
   import Calendar from './lib/components/Calendar.svelte';
   import Editor from './lib/components/Editor.svelte';
+  import PdfViewer from './lib/components/PdfViewer.svelte';
   import Settings from './lib/components/Settings.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
+  import { pdfStore } from './lib/stores/pdf';
 
   let tree = $derived(noteStore.tree);
   let breadcrumbs = $derived(noteStore.breadcrumbs);
@@ -83,8 +85,11 @@
   </div>
   <div class="main">
     <Breadcrumbs items={breadcrumbs} />
-    <div class="editor-area">
-      <Editor />
+    <div class="editor-area" class:with-pdf={pdfStore.isOpen}>
+      <div class="editor-wrap">
+        <Editor />
+      </div>
+      <PdfViewer />
     </div>
   </div>
   <div class="status-bar">
@@ -178,6 +183,16 @@
   .editor-area {
     flex: 1;
     overflow-y: auto;
+    display: flex;
+  }
+  .editor-area.with-pdf {
+    overflow-y: hidden;
+  }
+  .editor-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
   .status-bar {
     display: flex;

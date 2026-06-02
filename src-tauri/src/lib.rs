@@ -18,6 +18,10 @@ pub fn run() {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
+                        .filter(|metadata| {
+                            !metadata.target().starts_with("pdf_extract")
+                                && !metadata.target().starts_with("cff_parser")
+                        })
                         .build(),
                 )?;
 
@@ -57,6 +61,14 @@ pub fn run() {
             commands::notes::build_tree,
             commands::ai::generate_flashcards,
             commands::pdf::import_pdf,
+            commands::pdf::get_pdf_text,
+            commands::pdf::save_annotation,
+            commands::pdf::get_annotations,
+            commands::pdf::delete_annotation,
+            commands::pdf::get_pdfs_for_note,
+            commands::pdf::link_pdf_to_note,
+            commands::pdf::unlink_pdf_from_note,
+            commands::pdf::delete_pdf,
             commands::settings::get_settings,
             commands::settings::save_settings,
             commands::calendar::create_calendar_event,

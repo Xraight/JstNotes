@@ -1,6 +1,7 @@
 <script lang="ts">
   import { noteStore } from '../stores/notes';
   import { calendarStore } from '../stores/calendar';
+  import { pdfStore } from '../stores/pdf';
   import { Marked } from 'marked';
   import katex from 'katex';
   import 'katex/dist/katex.min.css';
@@ -278,6 +279,9 @@
       <button class="view-toggle" onclick={cycleView} title="Toggle view (edit / preview / split)">
         {viewMode === 'edit' ? '✏️' : viewMode === 'preview' ? '👁️' : '⇔'}
         {viewMode === 'edit' ? ' Edit' : viewMode === 'preview' ? ' Preview' : ' Split'}
+      </button>
+      <button class="view-toggle" onclick={() => pdfStore.toggle()} title="Open PDF">
+        📄 PDF
       </button>
       <span class="toolbar-hint">
         LaTeX: <code>$$...$$</code> / <code>$...$</code> &nbsp;|&nbsp; Mention: <code>@Título</code>

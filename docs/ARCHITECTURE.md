@@ -2,7 +2,10 @@
 
 ## Overview
 
-JSTNotes is a hybrid desktop app: **Tauri v2** provides the native shell, **Svelte 5 + TypeScript** runs the frontend in a webview, and **Rust** handles all backend logic (storage, AI, PDF). Communication between frontend and backend uses Tauri's `invoke` IPC mechanism.
+JSTNotes is a hybrid desktop app: **Tauri v2** provides the native shell,
+**Svelte 5 + TypeScript** runs the frontend in a webview, and **Rust**
+handles all backend logic (storage, AI, PDF). Communication between frontend
+and backend uses Tauri's `invoke` IPC mechanism.
 
 ```
 ┌─────────────────────────────────────┐
@@ -10,11 +13,11 @@ JSTNotes is a hybrid desktop app: **Tauri v2** provides the native shell, **Svel
 │  ┌───────────────────────────────┐  │
 │  │     Svelte 5 App             │  │
 │  │  ┌──────┐ ┌──────┐ ┌──────┐ │  │
-│  │  │Editor│ │Tree  │ │Settings│ │  │
+│  │  │Editor│ │Tree  │ │PdfView│ │  │
 │  │  └──┬───┘ └──┬───┘ └──┬───┘ │  │
 │  │     │        │        │      │  │
 │  │  ┌──┴────────┴────────┴───┐  │  │
-│  │  │     Stores (.svelte.ts) │  │  │
+│  │  │   Stores (.svelte.ts)  │  │  │
 │  │  └──────────┬─────────────┘  │  │
 │  └─────────────┼────────────────┘  │
 └────────────────┼───────────────────┘
@@ -22,35 +25,59 @@ JSTNotes is a hybrid desktop app: **Tauri v2** provides the native shell, **Svel
 ┌────────────────┼───────────────────┐
 │  Tauri Rust    ▼                   │
 │  ┌──────────────────────────────┐  │
-│  │      Commands (notes,        │  │
-│  │      settings, ai, pdf)      │  │
-│  └──────┬────────────────┬──────┘  │
-│         ▼                ▼         │
-│  ┌──────────┐    ┌──────────────┐  │
-│  │Hybrid    │    │  AI (stub)   │  │
-│  │Storage   │    │  PDF (stub)  │  │
-│  ├──────────┤    └──────────────┘  │
-│  │SQLite    │                      │
-│  │Markdown  │                      │
-│  └──────────┘                      │
+│  │  Commands (notes, settings,  │  │
+│  │  calendar, pdf, ai)          │  │
+│  └──────┬───────────────────┬───┘  │
+│         ▼                   ▼      │
+│  ┌────────────┐    ┌────────────┐  │
+│  │ Hybrid     │    │  PDF       │  │
+│  │ Storage    │    │  Extractor │  │
+│  ├────────────┤    └────────────┘  │
+│  │ SQLite     │                    │
+│  │ Markdown   │                    │
+│  └────────────┘                    │
+│  ┌────────────┐                    │
+│  │  AI (stub) │ (deferred)        │
+│  └────────────┘                    │
 └────────────────────────────────────┘
 ```
 
 ---
 
+## Phase status
+
+| Phase | Status | Description |
+|---|---|---|
+| **Phase 0** | ✅ Complete | Scaffolding, UI, Editor, Calendar, Settings, Themes, Typography |
+| **Phase 1** | ⏭️ Deferred | Local AI + RAG + Flashcards (plan in `docs/PHASE_1_AI.md`) |
+| **Phase 2** | 🔄 In progress | PDF viewer + annotations |
+| **Phase 3** | 📅 Planned | Graph view (D3.js / Canvas) |
+| **Phase 4** | 📅 Planned | Sync / SaaS layer |
+
+---
+
 ## Frontend (Svelte 5)
 
-### Component tree
+### Component tree (Phase 2)
 
 ```
 App.svelte
 ├── Sidebar
 │   ├── NoteTree.svelte
 │   │   └── TreeItem.svelte (recursive)
+│   ├── Calendar.svelte
 │   └── resize handle (draggable)
 ├── Main
 │   ├── Breadcrumbs.svelte
-│   └── Editor.svelte (split markdown)
+│   ├── Editor.svelte (split markdown)
+│   │   ├── .toolbar
+│   │   ├── .event-bar (linked calendar events)
+│   │   ├── .title-input
+│   │   ├── .content-input (markdown textarea)
+│   │   └── .preview (rendered markdown)
+│   └── PdfViewer.svelte (right panel, toggleable)
+│       ├── PDF.js canvas renderer
+│       └── Annotation overlay
 ├── StatusBar
 └── Settings.svelte (modal overlay)
     ├── Presets tab
@@ -68,6 +95,8 @@ Uses **Svelte 5 runes** (`$state`, `$derived`, `$effect`) with the `.svelte.ts` 
 |---|---|---|
 | `noteStore` | `src/lib/stores/notes.svelte.ts` | Note tree, selection, CRUD |
 | `settingsStore` | `src/lib/stores/settings.svelte.ts` | Theme, colors, typography, layout, custom CSS |
+| `calendarStore` | `src/lib/stores/calendar.svelte.ts` | Calendar events, note linking |
+| `pdfStore` | `src/lib/stores/pdf.svelte.ts` | PDF viewer state, annotations |
 
 **Critical pattern:** Always pass `JSON.parse(JSON.stringify())` copies to Tauri `invoke`. Svelte 5 `$state` proxies cannot be cloned by `structuredClone` (used internally by Tauri IPC), causing `DataCloneError`.
 
@@ -95,7 +124,7 @@ A `<style id="jstnotes-custom-css">` tag is injected into `<head>` and updated o
 
 ## Backend (Rust)
 
-### Module map
+### Module map (Phase 2)
 
 ```
 src-tauri/src/
@@ -106,22 +135,24 @@ src-tauri/src/
 │   ├── mod.rs
 │   ├── notes.rs         # 9 IPC commands for note CRUD
 │   ├── settings.rs      # get_settings / save_settings
-│   ├── ai.rs            # stub
-│   └── pdf.rs           # stub
+│   ├── calendar.rs      # 7 IPC commands for events + note linking
+│   ├── ai.rs            # stub (deferred)
+│   └── pdf.rs           # import_pdf, get_pdf_text, save_annotation, get_annotations
 ├── storage/
 │   ├── mod.rs
 │   ├── hybrid.rs        # Sync layer between SQLite + Markdown
-│   ├── sqlite.rs        # SQLite CRUD, tree building, breadcrumbs
+│   ├── sqlite.rs        # SQLite CRUD, tree building, breadcrumbs, PDF tables
 │   └── markdown.rs      # Read/write .md files
-├── ai/                  # Future: embeddings, inference, RAG
+├── ai/                  # Deferred: embeddings, inference, RAG
 │   ├── mod.rs
 │   ├── models.rs
 │   ├── embeddings.rs
 │   ├── inference.rs
 │   └── rag.rs
-└── pdf/                 # Future: PDF parsing, annotations
+└── pdf/                 # PDF parsing, annotations
     ├── mod.rs
-    └── extract.rs
+    ├── extract.rs       # Text extraction from PDF files
+    └── annotations.rs   # Annotation CRUD helpers
 ```
 
 ### Hybrid storage
@@ -151,11 +182,60 @@ CREATE TABLE notes (
     updated_at  TEXT NOT NULL,
     FOREIGN KEY (parent_id) REFERENCES notes(id)
 );
+
+CREATE TABLE calendar_events (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    completed   INTEGER DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE event_notes (
+    event_id TEXT NOT NULL,
+    note_id  TEXT NOT NULL,
+    PRIMARY KEY (event_id, note_id),
+    FOREIGN KEY (event_id) REFERENCES calendar_events(id),
+    FOREIGN KEY (note_id) REFERENCES notes(id)
+);
+
+CREATE TABLE pdfs (
+    id          TEXT PRIMARY KEY,
+    title       TEXT,
+    file_path   TEXT NOT NULL,
+    page_count  INTEGER DEFAULT 0,
+    text        TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE pdf_annotations (
+    id          TEXT PRIMARY KEY,
+    pdf_id      TEXT NOT NULL,
+    page        INTEGER NOT NULL,
+    type        TEXT NOT NULL,       -- 'highlight' | 'note' | 'underline'
+    x           REAL,
+    y           REAL,
+    width       REAL,
+    height      REAL,
+    color       TEXT,
+    content     TEXT,
+    created_at  TEXT NOT NULL,
+    FOREIGN KEY (pdf_id) REFERENCES pdfs(id)
+);
+
+CREATE TABLE note_pdfs (
+    note_id TEXT NOT NULL,
+    pdf_id  TEXT NOT NULL,
+    PRIMARY KEY (note_id, pdf_id),
+    FOREIGN KEY (note_id) REFERENCES notes(id),
+    FOREIGN KEY (pdf_id) REFERENCES pdfs(id)
+);
 ```
 
 ### Commands
 
-All 11 commands are registered in `lib.rs`:
+All commands registered in `lib.rs`:
 
 | Command | Description |
 |---|---|
@@ -170,6 +250,20 @@ All 11 commands are registered in `lib.rs`:
 | `get_settings` | Load AppSettings from disk |
 | `save_settings` | Persist AppSettings + apply theme |
 | `export_note` | Export single note as Markdown |
+| `create_calendar_event` | Create calendar event |
+| `get_calendar_events` | List events for a date range |
+| `update_calendar_event` | Update event title/description/completed |
+| `delete_calendar_event` | Delete event |
+| `link_note_to_event` | Associate a note with an event |
+| `unlink_note_from_event` | Remove note-event association |
+| `get_events_for_note` | Get all events linked to a note |
+| `import_pdf` | Copy PDF to app data, extract text, return metadata |
+| `get_pdf_text` | Return extracted text for a PDF |
+| `save_annotation` | Persist or update an annotation |
+| `get_annotations` | Load all annotations for a PDF |
+| `get_pdfs_for_note` | Get PDFs linked to a note |
+| `link_pdf_to_note` | Associate PDF with a note |
+| `unlink_pdf_from_note` | Remove PDF-note association |
 
 ### Settings persistence
 
@@ -201,6 +295,32 @@ User types in editor
           → SQLite update + Markdown write
 ```
 
+### Opening a PDF
+
+```
+User clicks "Open PDF" in toolbar
+  → File dialog (tauri-plugin-dialog)
+    → invoke('import_pdf', { filePath })
+      → Copy PDF to {app_data_dir}/pdfs/{uuid}.pdf
+      → Extract text via pdf-extract
+      → Insert into pdfs table
+      → Return PdfMetadata
+    → PdfViewer.svelte renders PDF.js
+      → Load PDF from copied path via tauri-plugin-fs
+      → Render canvases per page
+```
+
+### Saving an annotation
+
+```
+User highlights text or adds note
+  → Annotation overlay captures position + type + content
+    → invoke('save_annotation', { pdfId, page, type, x, y, w, h, color, content })
+      → Upsert pdf_annotations table
+      → Return annotation ID
+    → Overlay renders the annotation shape
+```
+
 ---
 
 ## Key design decisions
@@ -212,31 +332,24 @@ User types in editor
 | Vite `target: 'esnext'` | Tauri's webview (modern Chromium) supports all ESNext features |
 | Devtools auto-open in debug | `window.open_devtools()` in Rust for debug builds |
 | `expanded = $state(true)` on TreeItem | Nodes start collapsed; saves rendering on large trees |
+| PDF.js over custom renderer | Mature, handles all PDF features, Svelte overlay for annotations |
+| pdf-extract for Rust extraction | Pure Rust, no system deps, extracts text + metadata |
+| Annotation coords in relative % | Scales correctly with zoom / window resize |
 
 ---
 
-## Future architecture (Phase 1+)
+## Future architecture (Phase 1 + 3)
 
-### AI pipeline
+### AI pipeline (deferred, see `docs/PHASE_1_AI.md`)
 
 ```
 User query
-  → Embedding → Vector search (SQLite FTS5 + embeddings)
+  → Embedding → Vector search (cosine similarity)
     → Context retrieval → LLM prompt
       → Streamed response → ChatPanel / FlashCard generation
 ```
 
-### PDF pipeline
-
-```
-Open PDF
-  → Render via PDF.js (frontend)
-    → Text extraction (Rust)
-      → Annotation overlay (Svelte)
-        → Save annotations to SQLite
-```
-
-### Graph view
+### Graph view (Phase 3)
 
 ```
 D3.js / Canvas rendering

@@ -74,6 +74,47 @@ impl Database {
         )?;
         // drop old table schema after migrating data
         conn.execute_batch("DROP TABLE IF EXISTS calendar_entries;").ok();
+
+        // PDF tables
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS pdfs (
+                id          TEXT PRIMARY KEY,
+                title       TEXT,
+                file_path   TEXT NOT NULL,
+                page_count  INTEGER DEFAULT 0,
+                text        TEXT,
+                created_at  TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS pdf_annotations (
+                id          TEXT PRIMARY KEY,
+                pdf_id      TEXT NOT NULL,
+                page        INTEGER NOT NULL,
+                type        TEXT NOT NULL,
+                x           REAL NOT NULL DEFAULT 0,
+                y           REAL NOT NULL DEFAULT 0,
+                width       REAL NOT NULL DEFAULT 0,
+                height      REAL NOT NULL DEFAULT 0,
+                color       TEXT,
+                content     TEXT,
+                created_at  TEXT NOT NULL,
+                FOREIGN KEY (pdf_id) REFERENCES pdfs(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS note_pdfs (
+                note_id TEXT NOT NULL,
+                pdf_id  TEXT NOT NULL,
+                PRIMARY KEY (note_id, pdf_id),
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY (pdf_id) REFERENCES pdfs(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pdf_annotations_pdf ON pdf_annotations(pdf_id);
+            CREATE INDEX IF NOT EXISTS idx_note_pdfs_note ON note_pdfs(note_id);
+            CREATE INDEX IF NOT EXISTS idx_note_pdfs_pdf ON note_pdfs(pdf_id);
+            ",
+        )?;
         Ok(())
     }
 
@@ -360,5 +401,172 @@ impl Database {
             children: children.iter().map(|c| self.build_node(c, all)).collect(),
             created_at: note.created_at,
         }
+    }
+
+    // ── PDF methods ──
+
+    pub fn insert_pdf(&self, pdf: &PdfMetadata) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO pdfs (id, title, file_path, page_count, text, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![pdf.id, pdf.title, pdf.file_path, pdf.page_count, pdf.text, pdf.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_pdf(&self, pdf_id: &str) -> SqlResult<Option<PdfMetadata>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, file_path, page_count, text, created_at FROM pdfs WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![pdf_id], |row| {
+            Ok(PdfMetadata {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                file_path: row.get(2)?,
+                page_count: row.get(3)?,
+                text: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(pdf)) => Ok(Some(pdf)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn get_pdf_text(&self, pdf_id: &str) -> SqlResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT text FROM pdfs WHERE id = ?1")?;
+        let mut rows = stmt.query_map(params![pdf_id], |row| row.get::<_, Option<String>>(0))?;
+        match rows.next() {
+            Some(Ok(text)) => Ok(text),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn get_all_pdfs(&self) -> SqlResult<Vec<PdfMetadata>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, file_path, page_count, text, created_at FROM pdfs ORDER BY created_at DESC",
+        )?;
+        let pdfs = stmt.query_map([], |row| {
+            Ok(PdfMetadata {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                file_path: row.get(2)?,
+                page_count: row.get(3)?,
+                text: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(pdfs)
+    }
+
+    pub fn save_annotation(&self, input: &AnnotationInput) -> SqlResult<PdfAnnotation> {
+        use uuid::Uuid;
+        let conn = self.conn.lock().unwrap();
+        let id = Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO pdf_annotations (id, pdf_id, page, type, x, y, width, height, color, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                id, input.pdf_id, input.page, input.annotation_type,
+                input.x, input.y, input.width, input.height,
+                input.color, input.content, now
+            ],
+        )?;
+        Ok(PdfAnnotation {
+            id,
+            pdf_id: input.pdf_id.clone(),
+            page: input.page,
+            annotation_type: input.annotation_type.clone(),
+            x: input.x,
+            y: input.y,
+            width: input.width,
+            height: input.height,
+            color: input.color.clone(),
+            content: input.content.clone(),
+            created_at: now,
+        })
+    }
+
+    pub fn get_annotations(&self, pdf_id: &str) -> SqlResult<Vec<PdfAnnotation>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, pdf_id, page, type, x, y, width, height, color, content, created_at
+             FROM pdf_annotations WHERE pdf_id = ?1 ORDER BY page, created_at",
+        )?;
+        let annotations = stmt.query_map(params![pdf_id], |row| {
+            Ok(PdfAnnotation {
+                id: row.get(0)?,
+                pdf_id: row.get(1)?,
+                page: row.get(2)?,
+                annotation_type: row.get(3)?,
+                x: row.get(4)?,
+                y: row.get(5)?,
+                width: row.get(6)?,
+                height: row.get(7)?,
+                color: row.get(8)?,
+                content: row.get(9)?,
+                created_at: row.get(10)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(annotations)
+    }
+
+    pub fn delete_annotation(&self, annotation_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM pdf_annotations WHERE id = ?1", params![annotation_id])?;
+        Ok(())
+    }
+
+    pub fn link_pdf_to_note(&self, note_id: &str, pdf_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO note_pdfs (note_id, pdf_id) VALUES (?1, ?2)",
+            params![note_id, pdf_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn unlink_pdf_from_note(&self, note_id: &str, pdf_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM note_pdfs WHERE note_id = ?1 AND pdf_id = ?2",
+            params![note_id, pdf_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_pdfs_for_note(&self, note_id: &str) -> SqlResult<Vec<PdfMetadata>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.title, p.file_path, p.page_count, p.text, p.created_at
+             FROM pdfs p
+             JOIN note_pdfs np ON np.pdf_id = p.id
+             WHERE np.note_id = ?1
+             ORDER BY p.created_at DESC",
+        )?;
+        let pdfs = stmt.query_map(params![note_id], |row| {
+            Ok(PdfMetadata {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                file_path: row.get(2)?,
+                page_count: row.get(3)?,
+                text: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(pdfs)
+    }
+
+    pub fn delete_pdf(&self, pdf_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM pdf_annotations WHERE pdf_id = ?1", params![pdf_id])?;
+        conn.execute("DELETE FROM note_pdfs WHERE pdf_id = ?1", params![pdf_id])?;
+        conn.execute("DELETE FROM pdfs WHERE id = ?1", params![pdf_id])?;
+        Ok(())
     }
 }

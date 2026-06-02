@@ -75,3 +75,38 @@ export interface CalendarEvent {
   note_ids: string[];
   created_at: string;
 }
+
+export interface PdfMetadata {
+  id: string;
+  title: string | null;
+  file_path: string;
+  page_count: number;
+  text: string | null;
+  created_at: string;
+}
+
+export interface PdfAnnotation {
+  id: string;
+  pdf_id: string;
+  page: number;
+  annotation_type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string | null;
+  content: string | null;
+  created_at: string;
+}
+
+export interface AnnotationInput {
+  pdf_id: string;
+  page: number;
+  annotation_type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string | null;
+  content: string | null;
+}
