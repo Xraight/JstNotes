@@ -68,6 +68,15 @@ pub fn delete_annotation(annotation_id: String, storage: State<HybridStorage>) -
 }
 
 #[tauri::command]
+pub fn update_annotation_content(
+    annotation_id: String,
+    content: Option<String>,
+    storage: State<HybridStorage>,
+) -> Result<(), String> {
+    storage.db.update_annotation_content(&annotation_id, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_pdfs_for_note(note_id: String, storage: State<HybridStorage>) -> Result<Vec<PdfMetadata>, String> {
     storage.db.get_pdfs_for_note(&note_id).map_err(|e| e.to_string())
 }

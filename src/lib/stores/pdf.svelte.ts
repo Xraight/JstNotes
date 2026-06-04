@@ -69,6 +69,19 @@ class PdfStore {
     }
   }
 
+  async updateAnnotationContent(annotationId: string, content: string | null): Promise<boolean> {
+    try {
+      await invoke('update_annotation_content', { annotationId, content });
+      this.annotations = this.annotations.map(a =>
+        a.id === annotationId ? { ...a, content } : a
+      );
+      return true;
+    } catch (e) {
+      console.error('Failed to update annotation:', e);
+      return false;
+    }
+  }
+
   async deleteAnnotation(annotationId: string) {
     try {
       await invoke('delete_annotation', { annotationId });

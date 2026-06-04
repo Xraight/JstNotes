@@ -522,6 +522,15 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_annotation_content(&self, annotation_id: &str, content: Option<String>) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE pdf_annotations SET content = ?1 WHERE id = ?2",
+            params![content, annotation_id],
+        )?;
+        Ok(())
+    }
+
     pub fn link_pdf_to_note(&self, note_id: &str, pdf_id: &str) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

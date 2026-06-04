@@ -65,6 +65,7 @@ pub fn run() {
             commands::pdf::save_annotation,
             commands::pdf::get_annotations,
             commands::pdf::delete_annotation,
+            commands::pdf::update_annotation_content,
             commands::pdf::get_pdfs_for_note,
             commands::pdf::link_pdf_to_note,
             commands::pdf::unlink_pdf_from_note,
