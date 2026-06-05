@@ -20,6 +20,7 @@
   let linkedEvents = $state<import('../types').CalendarEvent[]>([]);
   let linkDropdownOpen = $state(false);
   let allUpcomingEvents = $state<import('../types').CalendarEvent[]>([]);
+  let pdfRefs = $state<import('../types').PdfReference[]>([]);
   let mentionFiltered = $derived(
     noteTitles.filter(t => t.toLowerCase().includes(mentionQuery.toLowerCase()))
   );
@@ -105,8 +106,10 @@
   $effect(() => {
     if (note?.id) {
       calendarStore.getEventsForNote(note.id).then(evs => { linkedEvents = evs; });
+      pdfStore.getPdfReferencesForNote(note.id).then(refs => { pdfRefs = refs; });
     } else {
       linkedEvents = [];
+      pdfRefs = [];
     }
   });
 
@@ -294,6 +297,23 @@
       oninput={handleTitleInput}
       placeholder="Note title..."
     />
+    {#if pdfRefs.length > 0}
+      <div class="pdf-refs-bar">
+        <span class="refs-label">📄</span>
+        {#each pdfRefs as ref}
+          {@const pdf = pdfStore.pdfs.find(p => p.id === ref.pdf_id)}
+          {#if pdf}
+            <button class="ref-badge"
+              onclick={() => pdfStore.openPdfAtPage(pdf, ref.page)}
+              title="Open {pdf.title || 'PDF'} at page {ref.page}"
+            >
+              {ref.label || `Page ${ref.page}`}
+              <span class="ref-page">p.{ref.page}</span>
+            </button>
+          {/if}
+        {/each}
+      </div>
+    {/if}
     <div class="event-bar">
       <span class="event-bar-label">📅</span>
       {#if linkedEvents.length > 0}
@@ -425,6 +445,40 @@
     background: var(--bg-secondary);
     padding: 1px 4px;
     border-radius: 3px;
+  }
+  .pdf-refs-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 24px;
+    font-size: 12px;
+    font-family: var(--font-sans);
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+  .refs-label {
+    flex-shrink: 0;
+  }
+  .ref-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ref-badge:hover {
+    border-color: var(--highlight);
+    color: var(--highlight);
+  }
+  .ref-page {
+    color: var(--text-secondary);
+    font-size: 11px;
   }
   .event-bar {
     display: flex;

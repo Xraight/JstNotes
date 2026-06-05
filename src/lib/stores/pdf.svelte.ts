@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readFile } from '@tauri-apps/plugin-fs';
-import type { PdfMetadata, PdfAnnotation, AnnotationInput } from '../types';
+import type { PdfMetadata, PdfAnnotation, AnnotationInput, PdfReference, CreatePdfReferenceInput } from '../types';
 
 class PdfStore {
   pdfs = $state<PdfMetadata[]>([]);
@@ -9,6 +9,16 @@ class PdfStore {
   annotations = $state<PdfAnnotation[]>([]);
   pdfData = $state<Uint8Array | null>(null);
   isOpen = $state(false);
+  linkedPdfIds = $state<string[]>([]);
+  targetPage = $state<number | null>(null);
+
+  async loadPdfs() {
+    try {
+      this.pdfs = await invoke<PdfMetadata[]>('list_pdfs');
+    } catch (e) {
+      console.error('Failed to load PDFs:', e);
+    }
+  }
 
   async importPdf(): Promise<PdfMetadata | null> {
     const selected = await open({
@@ -48,6 +58,12 @@ class PdfStore {
     this.annotations = [];
     this.pdfData = null;
     this.isOpen = false;
+    this.targetPage = null;
+  }
+
+  async openPdfAtPage(meta: PdfMetadata, page: number) {
+    this.targetPage = page;
+    await this.openPdf(meta);
   }
 
   async loadAnnotations(pdfId: string): Promise<PdfAnnotation[]> {
@@ -124,6 +140,31 @@ class PdfStore {
       }
     } catch (e) {
       console.error('Failed to delete PDF:', e);
+    }
+  }
+
+  async loadLinkedPdfs(noteId: string) {
+    try {
+      this.linkedPdfIds = await invoke<string[]>('get_linked_pdf_ids', { noteId });
+    } catch {
+      this.linkedPdfIds = [];
+    }
+  }
+
+  async createPdfReference(input: CreatePdfReferenceInput): Promise<PdfReference | null> {
+    try {
+      return await invoke<PdfReference>('create_pdf_reference', { input });
+    } catch (e) {
+      console.error('Failed to create PDF reference:', e);
+      return null;
+    }
+  }
+
+  async getPdfReferencesForNote(noteId: string): Promise<PdfReference[]> {
+    try {
+      return await invoke<PdfReference[]>('get_pdf_references_for_note', { noteId });
+    } catch {
+      return [];
     }
   }
 

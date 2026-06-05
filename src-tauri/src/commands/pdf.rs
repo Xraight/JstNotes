@@ -8,6 +8,11 @@ use crate::pdf::extract::PdfExtractor;
 use crate::storage::hybrid::HybridStorage;
 
 #[tauri::command]
+pub fn list_pdfs(storage: State<HybridStorage>) -> Result<Vec<PdfMetadata>, String> {
+    storage.db.get_all_pdfs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn import_pdf(
     file_path: String,
     app_handle: tauri::AppHandle,
@@ -98,4 +103,27 @@ pub fn delete_pdf(pdf_id: String, storage: State<HybridStorage>) -> Result<(), S
         let _ = fs::remove_file(&pdf.file_path);
     }
     storage.db.delete_pdf(&pdf_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_linked_pdf_ids(note_id: String, storage: State<HybridStorage>) -> Result<Vec<String>, String> {
+    storage.db.get_linked_pdf_ids(&note_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_pdf_reference(
+    input: CreatePdfReferenceInput,
+    storage: State<HybridStorage>,
+) -> Result<PdfReference, String> {
+    storage.db.create_pdf_reference(&input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_pdf_references_for_note(note_id: String, storage: State<HybridStorage>) -> Result<Vec<PdfReference>, String> {
+    storage.db.get_pdf_references_for_note(&note_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_pdf_reference(ref_id: String, storage: State<HybridStorage>) -> Result<(), String> {
+    storage.db.delete_pdf_reference(&ref_id).map_err(|e| e.to_string())
 }

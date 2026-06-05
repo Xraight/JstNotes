@@ -110,3 +110,23 @@ export interface AnnotationInput {
   color: string | null;
   content: string | null;
 }
+
+export interface PdfReference {
+  id: string;
+  note_id: string;
+  pdf_id: string;
+  page: number;
+  page_end: number | null;
+  label: string;
+  annotation_id: string | null;
+  created_at: string;
+}
+
+export interface CreatePdfReferenceInput {
+  note_id: string;
+  pdf_id: string;
+  page: number;
+  page_end: number | null;
+  label: string;
+  annotation_id: string | null;
+}

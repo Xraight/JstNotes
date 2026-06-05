@@ -215,6 +215,28 @@ pub struct PdfNoteLink {
     pub pdf_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfReference {
+    pub id: String,
+    pub note_id: String,
+    pub pdf_id: String,
+    pub page: i32,
+    pub page_end: Option<i32>,
+    pub label: String,
+    pub annotation_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePdfReferenceInput {
+    pub note_id: String,
+    pub pdf_id: String,
+    pub page: i32,
+    pub page_end: Option<i32>,
+    pub label: String,
+    pub annotation_id: Option<String>,
+}
+
 pub fn build_note_path(notes_dir: &str, id: &str, title: &str, parent_id: Option<&str>) -> String {
     let safe_title = title
         .to_lowercase()

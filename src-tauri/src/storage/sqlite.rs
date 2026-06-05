@@ -110,9 +110,25 @@ impl Database {
                 FOREIGN KEY (pdf_id) REFERENCES pdfs(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS pdf_references (
+                id            TEXT PRIMARY KEY,
+                note_id       TEXT NOT NULL,
+                pdf_id        TEXT NOT NULL,
+                page          INTEGER NOT NULL,
+                page_end      INTEGER,
+                label         TEXT NOT NULL DEFAULT '',
+                annotation_id TEXT,
+                created_at    TEXT NOT NULL,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY (pdf_id) REFERENCES pdfs(id) ON DELETE CASCADE,
+                FOREIGN KEY (annotation_id) REFERENCES pdf_annotations(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_pdf_annotations_pdf ON pdf_annotations(pdf_id);
             CREATE INDEX IF NOT EXISTS idx_note_pdfs_note ON note_pdfs(note_id);
             CREATE INDEX IF NOT EXISTS idx_note_pdfs_pdf ON note_pdfs(pdf_id);
+            CREATE INDEX IF NOT EXISTS idx_pdf_refs_note ON pdf_references(note_id);
+            CREATE INDEX IF NOT EXISTS idx_pdf_refs_pdf ON pdf_references(pdf_id);
             ",
         )?;
         Ok(())
@@ -528,6 +544,63 @@ impl Database {
             "UPDATE pdf_annotations SET content = ?1 WHERE id = ?2",
             params![content, annotation_id],
         )?;
+        Ok(())
+    }
+
+    pub fn get_linked_pdf_ids(&self, note_id: &str) -> SqlResult<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT pdf_id FROM note_pdfs WHERE note_id = ?1")?;
+        let ids = stmt.query_map(params![note_id], |row| row.get::<_, String>(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
+        Ok(ids)
+    }
+
+    pub fn create_pdf_reference(&self, input: &CreatePdfReferenceInput) -> SqlResult<PdfReference> {
+        use uuid::Uuid;
+        let conn = self.conn.lock().unwrap();
+        let id = Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO pdf_references (id, note_id, pdf_id, page, page_end, label, annotation_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, input.note_id, input.pdf_id, input.page, input.page_end, input.label, input.annotation_id, now],
+        )?;
+        Ok(PdfReference {
+            id,
+            note_id: input.note_id.clone(),
+            pdf_id: input.pdf_id.clone(),
+            page: input.page,
+            page_end: input.page_end,
+            label: input.label.clone(),
+            annotation_id: input.annotation_id.clone(),
+            created_at: now,
+        })
+    }
+
+    pub fn get_pdf_references_for_note(&self, note_id: &str) -> SqlResult<Vec<PdfReference>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, note_id, pdf_id, page, page_end, label, annotation_id, created_at
+             FROM pdf_references WHERE note_id = ?1 ORDER BY page",
+        )?;
+        let refs = stmt.query_map(params![note_id], |row| {
+            Ok(PdfReference {
+                id: row.get(0)?,
+                note_id: row.get(1)?,
+                pdf_id: row.get(2)?,
+                page: row.get(3)?,
+                page_end: row.get(4)?,
+                label: row.get(5)?,
+                annotation_id: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(refs)
+    }
+
+    pub fn delete_pdf_reference(&self, ref_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM pdf_references WHERE id = ?1", params![ref_id])?;
         Ok(())
     }
 

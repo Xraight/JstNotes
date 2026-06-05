@@ -6,6 +6,7 @@
   import Editor from './lib/components/Editor.svelte';
   import PdfViewer from './lib/components/PdfViewer.svelte';
   import Settings from './lib/components/Settings.svelte';
+  import PdfLibrary from './lib/components/PdfLibrary.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
   import { pdfStore } from './lib/stores/pdf';
@@ -19,6 +20,8 @@
   let settingsOpen = $state(false);
   let error = $state<string | null>(null);
   let dragging = $state(false);
+  let pdfWidth = $state(50);
+  let editorAreaRef = $state<HTMLDivElement>();
 
   onMount(async () => {
     await settingsStore.load();
@@ -27,7 +30,16 @@
     } catch (e: unknown) {
       error = `Error: ${e instanceof Error ? e.message : String(e)}`;
     }
+    await pdfStore.loadPdfs();
     if (sidebarRef) calRef = sidebarRef.querySelector<HTMLElement>('[data-calendar]');
+  });
+
+  $effect(() => {
+    if (selectedNote) {
+      pdfStore.loadLinkedPdfs(selectedNote.id);
+    } else {
+      pdfStore.linkedPdfIds = [];
+    }
   });
 
   function startDrag(e: MouseEvent) {
@@ -57,6 +69,27 @@
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }
+
+  function startPdfResize(e: MouseEvent) {
+    dragging = true;
+    const startX = e.clientX;
+    const startWidth = pdfWidth;
+
+    function onMouseMove(ev: MouseEvent) {
+      const areaW = editorAreaRef?.clientWidth || 1;
+      const delta = ((startX - ev.clientX) / areaW) * 100;
+      pdfWidth = Math.max(30, Math.min(70, startWidth + delta));
+    }
+
+    function onMouseUp() {
+      dragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
 </script>
 
 {#if error}
@@ -74,6 +107,7 @@
     </div>
     <NoteTree nodes={tree} />
     <Calendar />
+    <PdfLibrary />
     <button class="sidebar-resize-handle"
       onmousedown={startDrag}
       aria-label="Resize sidebar"
@@ -85,11 +119,22 @@
   </div>
   <div class="main">
     <Breadcrumbs items={breadcrumbs} />
-    <div class="editor-area" class:with-pdf={pdfStore.isOpen}>
+    <div class="editor-area" class:with-pdf={pdfStore.isOpen} bind:this={editorAreaRef}>
       <div class="editor-wrap">
         <Editor />
       </div>
-      <PdfViewer />
+      {#if pdfStore.isOpen}
+        <button
+          class="pdf-divider"
+          onmousedown={startPdfResize}
+          aria-label="Resize PDF panel"
+          onkeydown={(e) => {
+            if (e.key === 'ArrowLeft') pdfWidth = Math.max(30, pdfWidth - 5);
+            if (e.key === 'ArrowRight') pdfWidth = Math.min(70, pdfWidth + 5);
+          }}>
+        </button>
+      {/if}
+      <PdfViewer pdfWidth={pdfWidth} />
     </div>
   </div>
   <div class="status-bar">
@@ -187,6 +232,21 @@
   }
   .editor-area.with-pdf {
     overflow-y: hidden;
+  }
+  .pdf-divider {
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    border: none;
+    padding: 0;
+    outline: none;
+    flex-shrink: 0;
+    z-index: 5;
+  }
+  .pdf-divider:hover,
+  .dragging .pdf-divider {
+    background: var(--highlight);
+    opacity: 0.3;
   }
   .editor-wrap {
     flex: 1;
