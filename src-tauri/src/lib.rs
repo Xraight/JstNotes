@@ -1,3 +1,11 @@
+//! JSTNotes — Tauri application entry point.
+//!
+//! Manages global state:
+//!   - HybridStorage (SQLite DB + Markdown files)
+//!   - AppSettingsState (colors, typography, layout, AI config)
+//!
+//! Registers 35+ IPC commands across notes, PDF, AI, calendar, and settings.
+
 mod commands;
 mod models;
 mod pdf;
@@ -38,10 +46,12 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).ok();
             let app_dir_str = app_dir.to_string_lossy().to_string();
 
+            // Initialize managed state objects — available to all commands via State<T>.
             let storage = HybridStorage::new(&app_dir_str)
                 .expect("Failed to initialize storage");
             app.manage(storage);
 
+            // Settings loaded from disk, exposed via Mutex for thread-safe mutation.
             let settings = models::load_settings(&app_dir_str);
             app.manage(AppSettingsState {
                 app_dir: app_dir_str.clone(),
@@ -59,7 +69,14 @@ pub fn run() {
             commands::notes::get_children,
             commands::notes::get_breadcrumbs,
             commands::notes::build_tree,
-            commands::ai::generate_flashcards,
+            commands::ai::test_ai_connection,
+            commands::ai::fetch_ai_models,
+            commands::ai::generate_study_questions,
+            commands::ai::get_due_reviews,
+            commands::ai::rate_review,
+            commands::ai::generate_feynman_prompt,
+            commands::ai::evaluate_feynman,
+            commands::ai::get_study_items,
             commands::pdf::list_pdfs,
             commands::pdf::import_pdf,
             commands::pdf::get_pdf_text,

@@ -21,6 +21,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   layout: {
     sidebar_width: 280,
   },
+  ai_provider: 'groq',
+  ai_api_key: '',
+  ai_model: 'llama-3.3-70b-versatile',
+  ai_enabled: true,
+  ai_endpoint: '',
 };
 
 class SettingsStore {
@@ -29,7 +34,8 @@ class SettingsStore {
 
   async load() {
     try {
-      this.settings = await invoke<AppSettings>('get_settings');
+      const s = await invoke<AppSettings>('get_settings');
+      this.settings = { ...DEFAULT_SETTINGS, ...s };
     } catch {
       this.settings = DEFAULT_SETTINGS;
     }

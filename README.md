@@ -1,20 +1,45 @@
 # JSTNotes
 
-A note-taking desktop app with local AI, PDF annotations, adaptive learning, and full UI customization. Built with Tauri v2 + Svelte 5 + TypeScript.
+A note-taking desktop app with cloud AI study tools, PDF annotations, adaptive learning (SM-2), and full UI customization. Built with Tauri v2 + Svelte 5 + TypeScript + Rust.
 
-> **Status:** Phase 0 — Core scaffolding complete. Active development.
+> **Status:** Phase 2 (PDF) complete. Phase 1 (AI Study) operational with Groq/OpenAI/OpenCode Go.
 
 ---
 
 ## Features
 
-- **Markdown editor** with live split preview
-- **Tree sidebar** with nested notes
-- **Persistent settings** — custom colors, typography, layout
+### Notes & Organization
+- **Markdown editor** with live split preview, LaTeX math, @-mentions
+- **Tree sidebar** with nested notes, drag-friendly hierarchy
+- **Calendar** with events linked to notes
+- **Breadcrumbs** navigation
+
+### PDF Integration (Phase 2 ✅)
+- **PDF viewer** with zoom (30-400%), Ctrl+scroll, horizontal pan buttons
+- **PDF library** in sidebar: import, delete, filter by current note
+- **Highlights** with live preview rectangle, captured text, right-click delete
+- **PDF notes** integrated as real Notes in the tree — double-click opens in editor
+- **Bidirectional navigation**: note badges link to PDF pages, markers link to notes
+- **Text search** with highlighted matches and prev/next navigation
+- **Resizable** editor/PDF split
+
+### AI Study Tools (Phase 1 ✅)
+- **Flashcards** — AI-generated active recall questions from notes + PDF context + calendar
+- **Spaced Repetition (SM-2)** — Study Dashboard with daily reviews, self-rating 1-5
+- **Feynman Technique** — AI challenges you to explain a concept, then evaluates your explanation
+- **Multi-provider**: Groq (free), OpenAI, OpenCode Go
+- **Auto-detect models**: fetches available models from provider API
+- **Offline fallback**: rule-based question extraction from headings, bold text, bullet points
+- **Language-aware**: responds in the note's language (English, Spanish, etc.)
+
+### Customization
+- **Persistent settings** — colors, typography, layout, custom CSS
 - **Theme presets** (Midnight, Dracula, Nord, Catppuccin, etc.)
-- **Custom CSS** overlay
-- Hybrid storage: Markdown files + SQLite metadata
-- (Coming) Local AI with RAG, PDF viewer, flashcards, graph view
+- **Custom CSS** overlay with live preview
+- **Resizable sidebar**
+
+### Storage
+- Hybrid: Markdown files (content) + SQLite (metadata)
 
 ---
 
@@ -24,24 +49,22 @@ A note-taking desktop app with local AI, PDF annotations, adaptive learning, and
 
 - [Rust](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) >= 18
-- Conda environment `JstNotes` (for Python AI models later)
 
 ### Quick start
 
 ```bash
 git clone <repo-url> && cd JstNotes
-
-# Install Node dependencies
 npm install
-
-# Run in dev mode (Tauri window + hot reload)
 npm run tauri dev
-
-# Or just the web frontend
-npm run dev
 ```
 
 The Rust backend compiles on first run — subsequent launches are faster.
+
+### AI Setup (optional)
+
+1. Go to [console.groq.com](https://console.groq.com) — create free account (no credit card)
+2. Copy your API key
+3. In JstNotes: Settings → AI → Groq → paste key → Test
 
 ---
 
@@ -59,13 +82,13 @@ JstNotes/
 │   └── main.ts             # Entry point
 ├── src-tauri/              # Backend (Rust)
 │   └── src/
-│       ├── commands/       # Tauri IPC commands
+│       ├── commands/       # Tauri IPC commands (notes, pdf, ai, calendar, settings)
 │       ├── storage/        # Hybrid storage (SQLite + Markdown)
-│       ├── ai/             # AI module (stub)
-│       ├── pdf/            # PDF module (stub)
+│       ├── ai/             # AI module (client, study, models)
+│       ├── pdf/            # PDF extraction
 │       ├── models.rs       # Data models + serialization
-│       └── lib.rs          # Tauri entry + plugin registration
-├── docs/                   # Architecture docs (`docs/ARCHITECTURE.md`)
+│       └── lib.rs          # Tauri entry + command registration
+├── docs/                   # Architecture + phase docs
 ├── package.json
 ├── vite.config.ts
 └── opencode.json           # OpenCode agents config
@@ -82,13 +105,14 @@ JstNotes/
 | Backend | Rust, [rusqlite](https://github.com/rusqlite/rusqlite) |
 | Storage | SQLite (metadata) + Markdown (content) |
 | Markdown | `pulldown-cmark` (Rust), `marked` (JS preview) |
-| AI (future) | Local LLM via `llama.cpp` or similar |
+| AI | Groq / OpenAI / OpenCode Go via `reqwest` (OpenAI-compatible API) |
+| PDF | `pdfjs-dist`, `pdf-extract` + `lopdf` (Rust) |
 
 ---
 
 ## Architecture
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details on the project structure, data flow, backend modules, and design decisions.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details.
 
 ## Contributing
 
@@ -98,12 +122,8 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full details on the proje
 4. Run `npm run build` to verify no errors
 5. Commit and push — PRs welcome
 
-Keep it simple: one feature per PR, match existing code style.
-
 ---
 
 ## License
 
 PolyForm Noncommercial License 1.0.0 — see [`LICENSE`](LICENSE) for details.
-
-Commercial use requires explicit permission from the author.

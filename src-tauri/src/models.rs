@@ -74,6 +74,11 @@ pub struct AppSettings {
     pub colors: ColorSettings,
     pub typography: TypographySettings,
     pub layout: LayoutSettings,
+    pub ai_provider: String,
+    pub ai_api_key: String,
+    pub ai_model: String,
+    pub ai_enabled: bool,
+    pub ai_endpoint: String,
 }
 
 impl Default for AppSettings {
@@ -83,6 +88,11 @@ impl Default for AppSettings {
             colors: ColorSettings::default(),
             typography: TypographySettings::default(),
             layout: LayoutSettings::default(),
+            ai_provider: "groq".to_string(),
+            ai_api_key: String::new(),
+            ai_model: "llama-3.3-70b-versatile".to_string(),
+            ai_enabled: true,
+            ai_endpoint: String::new(),
         }
     }
 }
@@ -246,4 +256,30 @@ pub fn build_note_path(notes_dir: &str, id: &str, title: &str, parent_id: Option
         Some(pid) => format!("{}/{}/{}", notes_dir, pid, safe_title),
         None => format!("{}/{}", notes_dir, safe_title),
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Flashcard {
+    pub id: String,
+    pub note_id: String,
+    pub question: String,
+    pub answer: String,
+    pub created_at: String,
+    pub reviewed: i32,
+    pub difficulty: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessageInput {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConfigInput {
+    pub provider: String,
+    pub endpoint: String,
+    pub api_key: String,
+    pub model: String,
+    pub enabled: bool,
 }

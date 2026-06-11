@@ -2,7 +2,9 @@
   import { noteStore } from '../stores/notes';
   import { calendarStore } from '../stores/calendar';
   import { pdfStore } from '../stores/pdf';
+  import { aiStore } from '../stores/ai';
   import { Marked } from 'marked';
+  import FlashCard from './FlashCard.svelte';
   import katex from 'katex';
   import 'katex/dist/katex.min.css';
 
@@ -21,6 +23,7 @@
   let linkDropdownOpen = $state(false);
   let allUpcomingEvents = $state<import('../types').CalendarEvent[]>([]);
   let pdfRefs = $state<import('../types').PdfReference[]>([]);
+  let showFlashcards = $state(false);
   let mentionFiltered = $derived(
     noteTitles.filter(t => t.toLowerCase().includes(mentionQuery.toLowerCase()))
   );
@@ -286,6 +289,17 @@
       <button class="view-toggle" onclick={() => pdfStore.toggle()} title="Open PDF">
         📄 PDF
       </button>
+      <button class="view-toggle" onclick={() => aiStore.togglePanel()} title="Study Dashboard">
+        📚 Study
+      </button>
+      <button class="view-toggle"
+        onclick={async () => { if (note) await aiStore.generateQuestions(note.id); }}
+        title="Generate study questions">
+        {aiStore.isGenerating ? '…' : '⚡ Generate'}
+      </button>
+      <button class="view-toggle" onclick={() => showFlashcards = !showFlashcards} title="Flashcards">
+        🃏 Cards
+      </button>
       <span class="toolbar-hint">
         LaTeX: <code>$$...$$</code> / <code>$...$</code> &nbsp;|&nbsp; Mention: <code>@Título</code>
       </span>
@@ -394,6 +408,9 @@
         <div class="preview" class:with-editor={viewMode === 'split'} onclick={handleMentionClick}>
           <div class="preview-content">{@html renderedHTML}</div>
         </div>
+      {/if}
+      {#if showFlashcards}
+        <FlashCard />
       {/if}
     </div>
   {:else}

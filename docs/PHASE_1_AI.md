@@ -1,143 +1,141 @@
-# Phase 1: Local AI + RAG (Deferred)
+# Phase 1: AI Study Tools (Operational)
 
-> This phase is deferred until after PDF integration (Phase 2).
-> Revisit once Phase 2 is stable.
+> Status: Operational with Groq/OpenAI/OpenCode Go. Cloud-first architecture.
+> Originally designed for local Ollama → migrated to candle → settled on cloud APIs.
 
 ## Goal
 
-Build a fully offline AI assistant with RAG (Retrieval-Augmented Generation)
-that understands the user's notes, generates flashcards, answers questions,
-and adapts to available hardware (0.5B–7B models).
+An AI-powered study system that applies evidence-based learning techniques:
+- Spaced Repetition (SM-2)
+- Active Recall (flashcards)
+- Feynman Technique
+- Rule-based fallback when offline
 
 ## Architecture
 
 ```
-User query
-  → Embedding (Ollama /api/embeddings)
-    → Vector search (cosine similarity over SQLite)
-      → Context retrieval (top K notes)
-        → Prompt assembly
-          → LLM inference (Ollama /api/generate, streaming)
-            → Response → ChatPanel / Flashcards
+User action
+  → Frontend (Svelte) invoke()
+    → Rust command (commands/ai.rs)
+      → Read note content + PDF refs + calendar events
+      → IF API key: ai/client.rs → POST to Groq/OpenAI → parse response
+      → IF no key: rule-based extraction (headings, bold, bullets)
+    → Save to SQLite (study_items table)
+  → Frontend renders cards / dashboard
 ```
 
 ## Backend (Rust)
 
-### Dependencies (Cargo.toml)
+### Modules
 
-```toml
-reqwest = { version = "0.12", features = ["json"] }
-tokio-tungstenite = "0.21"  # for streaming chat
-```
+| File | Purpose |
+|---|---|
+| `ai/client.rs` | HTTP client (OpenAI-compatible). `chat()`, `list_models()`. Auth via Bearer + x-api-key. |
+| `ai/study.rs` | SM-2 algorithm (`sm2()`), `StudyItem`, `StudyQuestion` types |
+| `ai/models.rs` | `FlashcardInput` type |
 
-### Commands
+### Commands (8)
 
 | Command | Description |
 |---|---|
-| `check_ollama` | Health check: verify Ollama is running |
-| `list_ollama_models` | Fetch available models from `ollama list` |
-| `generate_embedding(text)` | Call `/api/embeddings` for a single string |
-| `generate_flashcards(note_id)` | Generate Q&A pairs from note content |
-| `chat_stream(message, note_id, opts)` | Streamed chat with RAG context |
-| `reindex_embeddings` | Rebuild all note embeddings |
+| `generate_study_questions(note_id)` | AI or rule-based → saves `StudyItem[]` |
+| `get_due_reviews()` | Items with `next_review <= today` |
+| `rate_review(item_id, quality)` | Update SM-2: interval, ease_factor, repetitions |
+| `generate_feynman_prompt(note_id)` | AI generates challenge question |
+| `evaluate_feynman(note_id, explanation)` | AI evaluates user's explanation |
+| `get_study_items(note_id)` | All study items for a note |
+| `test_ai_connection()` | Ping API with "Say OK" → verify auth + endpoint |
+| `fetch_ai_models()` | GET /models → return available chat models |
 
-### Embeddings storage
+### SM-2 Algorithm
+
+```
+quality < 3: reset (interval=1, reps=0)
+quality >= 3:
+  reps += 1
+  interval: 1 → 1, 2 → 6, 3+ → interval * ease_factor
+  ease_factor: ef + 0.1 - (5-q)*(0.08 + (5-q)*0.02), min 1.3
+```
+
+### SQLite: study_items
 
 ```sql
-CREATE TABLE note_embeddings (
-    note_id     TEXT PRIMARY KEY,
-    embedding   BLOB NOT NULL,       -- f32 vector as raw bytes
-    updated_at  TEXT NOT NULL,
-    FOREIGN KEY (note_id) REFERENCES notes(id)
+CREATE TABLE study_items (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    next_review TEXT NOT NULL,
+    interval_days INTEGER DEFAULT 1,
+    ease_factor REAL DEFAULT 2.5,
+    repetitions INTEGER DEFAULT 0,
+    reviewed_at TEXT,
+    source_page INTEGER
 );
 ```
 
-Search is done in Rust: load all embeddings, compute cosine similarity,
-return top K note IDs.
+### AI Provider Config (stored in AppSettings)
 
-### Flashcard SQLite schema
+| Field | Default |
+|---|---|
+| `ai_provider` | `"groq"` |
+| `ai_api_key` | `""` |
+| `ai_model` | `"llama-3.3-70b-versatile"` |
+| `ai_enabled` | `true` |
+| `ai_endpoint` | auto-filled per provider |
 
-```sql
-CREATE TABLE flashcards (
-    id          TEXT PRIMARY KEY,
-    note_id     TEXT NOT NULL,
-    question    TEXT NOT NULL,
-    answer      TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    reviewed    INTEGER DEFAULT 0,
-    difficulty  INTEGER DEFAULT 3,   -- 1-5
-    FOREIGN KEY (note_id) REFERENCES notes(id)
-);
-```
+Supported providers: Groq, OpenAI, OpenCode Go, Custom
+
+---
 
 ## Frontend (Svelte)
 
-### ChatPanel.svelte
+### Components
 
-- Right sidebar panel (toggleable)
-- Message history (user + assistant)
-- Streaming markdown rendering
-- "Attach current note" toggle
-- RAG context indicator
-
-### Flashcards.svelte
-
-- Quiz mode: question → reveal answer → rate difficulty
-- List mode: browse all flashcards for a note
-- Generate button in Editor toolbar
-
-### AI Settings tab
-
-- Ollama connection status
-- Model selector (populated from `list_ollama_models`)
-- Sliders: temperature, top-k RAG, max context length
-
-## Prompt design
-
-### System prompt (chat)
-
-```
-You are JST, an AI assistant integrated into the user's note-taking app.
-You have access to the following notes from their vault to provide context:
-
-{context_notes}
-
-Answer based on the user's notes when relevant.
-If asked about something not in the notes, say so and offer general help.
-Keep answers concise.
-```
-
-### Flashcard generation prompt
-
-```
-Generate flashcards from the following note content.
-Each flashcard should be a question-answer pair covering key concepts.
-Return as a JSON array: [{"question": "...", "answer": "..."}]
-
-Note content:
-{content}
-```
-
-## Data flow
-
-### On note save:
-1. Debounce 2s
-2. Call `generate_embedding(note.content)`
-3. Upsert into `note_embeddings`
-
-### On chat message:
-1. Get current note content (if attached)
-2. Call `generate_embedding(message)`
-3. Search top-K similar notes
-4. Assemble prompt with context
-5. Stream response via Ollama `/api/generate`
-
-## Key decisions
-
-| Decision | Rationale |
+| Component | Purpose |
 |---|---|
-| Ollama over embedded llama.cpp | Smaller binary, flexible model choice, no C++ build deps |
-| Embeddings via Ollama API | Consistent with inference, no extra dependencies |
-| Cosine similarity in Rust | Simple, no need for vector db yet; SQLite + f32 math |
-| Streaming via Server-Sent Events | Tauri IPC supports streaming callback patterns |
-| JSON prompt for flashcards | Structured output for reliable parsing |
+| `FlashCard.svelte` | Embedded in Editor. Q&A cards with next/prev, reveal, self-rate 1-5 |
+| `StudyPanel.svelte` | Right panel. Dashboard: due reviews, quiz mode, Feynman exercises |
+| `Settings.svelte` (AI tab) | Provider cards, API key, Test Connection, dynamic model dropdown |
+
+### Store: `aiStore`
+
+| State | Purpose |
+|---|---|
+| `studyItems` | Current note's questions |
+| `dueReviews` | All items due today |
+| `isGenerating` | Loading state |
+| `availableModels` | Populated by `fetchModels()` |
+| `apiConfigured` | Derived: key exists + enabled |
+| `lastError` | Latest error message |
+
+### Rule-based fallback (offline)
+
+When no API key is configured, `generate_study_questions` extracts questions from:
+1. Markdown headings (`# Title` → "What is 'Title'?")
+2. Bold text (`**term**` → "Define: term")
+3. Bullet points (`- point` → "Explain: point")
+4. Sentences → fill-in-the-blank
+
+---
+
+## Providers
+
+| Provider | Price | Models | Auto-detect | Reasoning noise |
+|---|---|---|---|---|
+| **Groq** | Free | Llama 3.3 70B, Llama 3.1 8B, Qwen3 32B | ✅ | No |
+| OpenAI | Pay per use | GPT-5.4 mini, GPT-5.4, GPT-4o | ✅ | No |
+| OpenCode Go | $10/mo | DeepSeek V4 Pro/Flash, Kimi, Qwen | ❌ | ⚠️ DeepSeek |
+| Custom | Varies | Any | ❌ | Depends |
+
+---
+
+## Future Enhancements
+
+- **RAG** — semantic search over note embeddings (table + cosine similarity ready, needs embedding model)
+- **Elaborative Interrogation** — AI asks "why" and "how" questions, not just factual recall
+- **Interleaving** — mixed-topic review sessions based on forgetting curves
+- **Concrete Examples** — AI generates analogies for abstract concepts
+- **Study Statistics** — progress dashboard, streaks, topic mastery tracking
+- **Calendar-aware prioritization** — upcoming exam dates influence what to review

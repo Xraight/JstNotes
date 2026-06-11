@@ -7,9 +7,11 @@
   import PdfViewer from './lib/components/PdfViewer.svelte';
   import Settings from './lib/components/Settings.svelte';
   import PdfLibrary from './lib/components/PdfLibrary.svelte';
+  import StudyPanel from './lib/components/StudyPanel.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
   import { pdfStore } from './lib/stores/pdf';
+  import { aiStore } from './lib/stores/ai';
 
   let tree = $derived(noteStore.tree);
   let breadcrumbs = $derived(noteStore.breadcrumbs);
@@ -135,6 +137,7 @@
         </button>
       {/if}
       <PdfViewer pdfWidth={pdfWidth} />
+      <StudyPanel />
     </div>
   </div>
   <div class="status-bar">

@@ -1,56 +1,42 @@
-# Architecture
+# Architecture — JSTNotes
 
 ## Overview
 
-JSTNotes is a hybrid desktop app: **Tauri v2** provides the native shell,
-**Svelte 5 + TypeScript** runs the frontend in a webview, and **Rust**
-handles all backend logic (storage, AI, PDF). Communication between frontend
-and backend uses Tauri's `invoke` IPC mechanism.
+JSTNotes is a hybrid desktop app. The Tauri webview (Svelte 5) communicates with the Rust backend via `invoke()` IPC. Storage is hybrid: SQLite for metadata, Markdown files for note content. AI uses cloud APIs (Groq/OpenAI) via `reqwest`.
 
 ```
-┌─────────────────────────────────────┐
-│           Tauri Webview             │
-│  ┌───────────────────────────────┐  │
-│  │     Svelte 5 App             │  │
-│  │  ┌──────┐ ┌──────┐ ┌──────┐ │  │
-│  │  │Editor│ │Tree  │ │PdfView│ │  │
-│  │  └──┬───┘ └──┬───┘ └──┬───┘ │  │
-│  │     │        │        │      │  │
-│  │  ┌──┴────────┴────────┴───┐  │  │
-│  │  │   Stores (.svelte.ts)  │  │  │
-│  │  └──────────┬─────────────┘  │  │
-│  └─────────────┼────────────────┘  │
-└────────────────┼───────────────────┘
-                 │ invoke() IPC
-┌────────────────┼───────────────────┐
-│  Tauri Rust    ▼                   │
-│  ┌──────────────────────────────┐  │
-│  │  Commands (notes, settings,  │  │
-│  │  calendar, pdf, ai)          │  │
-│  └──────┬───────────────────┬───┘  │
-│         ▼                   ▼      │
-│  ┌────────────┐    ┌────────────┐  │
-│  │ Hybrid     │    │  PDF       │  │
-│  │ Storage    │    │  Extractor │  │
-│  ├────────────┤    └────────────┘  │
-│  │ SQLite     │                    │
-│  │ Markdown   │                    │
-│  └────────────┘                    │
-│  ┌────────────┐                    │
-│  │  AI (stub) │ (deferred)        │
-│  └────────────┘                    │
-└────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  Svelte 5 Frontend (Tauri WebView)                    │
+│  ┌────────┐  ┌──────────────┐  ┌───────────────────┐ │
+│  │Sidebar │  │   Editor     │  │PDF Viewer/Study   │ │
+│  └────────┘  └──────────────┘  └───────────────────┘ │
+├──────────────────────────────────────────────────────┤
+│  Tauri IPC (invoke)                                   │
+├──────────────────────────────────────────────────────┤
+│  Rust Backend                                         │
+│  ┌──────────┐ ┌───────────┐ ┌──────┐ ┌────────────┐ │
+│  │commands/ │ │ storage/  │ │ ai/  │ │ pdf/       │ │
+│  │notes     │ │ sqlite    │ │client│ │ extract    │ │
+│  │pdf       │ │ markdown  │ │study │ │            │ │
+│  │ai        │ │ hybrid    │ │models│ │            │ │
+│  │calendar  │ │           │ │      │ │            │ │
+│  │settings  │ │           │ │      │ │            │ │
+│  └──────────┘ └───────────┘ └──────┘ └────────────┘ │
+├──────────────────────────────────────────────────────┤
+│  File System                  │  Cloud APIs           │
+│  Markdown files + SQLite DB   │  Groq / OpenAI / etc  │
+└──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase status
+## Phase Status
 
 | Phase | Status | Description |
 |---|---|---|
-| **Phase 0** | ✅ Complete | Scaffolding, UI, Editor, Calendar, Settings, Themes, Typography |
-| **Phase 1** | ⏭️ Deferred | Local AI + RAG + Flashcards (plan in `docs/PHASE_1_AI.md`) |
-| **Phase 2** | 🔄 In progress | PDF viewer + annotations |
+| **Phase 0** | ✅ Complete | Scaffolding, Editor, Calendar, Settings, Themes |
+| **Phase 1** | ✅ Operational | AI study tools (flashcards, Feynman, SM-2) via cloud APIs |
+| **Phase 2** | ✅ Complete | PDF viewer, annotations, note-PDF linking, text search |
 | **Phase 3** | 📅 Planned | Graph view (D3.js / Canvas) |
 | **Phase 4** | 📅 Planned | Sync / SaaS layer |
 
@@ -58,302 +44,141 @@ and backend uses Tauri's `invoke` IPC mechanism.
 
 ## Frontend (Svelte 5)
 
-### Component tree (Phase 2)
+### Component Tree
 
 ```
 App.svelte
 ├── Sidebar
-│   ├── NoteTree.svelte
-│   │   └── TreeItem.svelte (recursive)
+│   ├── NoteTree.svelte → TreeItem.svelte (recursive)
 │   ├── Calendar.svelte
-│   └── resize handle (draggable)
+│   └── PdfLibrary.svelte
 ├── Main
 │   ├── Breadcrumbs.svelte
-│   ├── Editor.svelte (split markdown)
-│   │   ├── .toolbar
-│   │   ├── .event-bar (linked calendar events)
-│   │   ├── .title-input
-│   │   ├── .content-input (markdown textarea)
-│   │   └── .preview (rendered markdown)
-│   └── PdfViewer.svelte (right panel, toggleable)
-│       ├── PDF.js canvas renderer
-│       └── Annotation overlay
+│   ├── Editor.svelte
+│   │   └── FlashCard.svelte (toggleable)
+│   ├── PdfViewer.svelte
+│   └── StudyPanel.svelte
 ├── StatusBar
-└── Settings.svelte (modal overlay)
-    ├── Presets tab
-    ├── Colors tab
-    ├── Font tab
-    ├── Layout tab
-    └── CSS tab
+└── Settings.svelte (modal)
 ```
 
-### State management
-
-Uses **Svelte 5 runes** (`$state`, `$derived`, `$effect`) with the `.svelte.ts` extension for module-level stores.
+### Stores (Svelte 5 Runes)
 
 | Store | File | Purpose |
 |---|---|---|
-| `noteStore` | `src/lib/stores/notes.svelte.ts` | Note tree, selection, CRUD |
-| `settingsStore` | `src/lib/stores/settings.svelte.ts` | Theme, colors, typography, layout, custom CSS |
-| `calendarStore` | `src/lib/stores/calendar.svelte.ts` | Calendar events, note linking |
-| `pdfStore` | `src/lib/stores/pdf.svelte.ts` | PDF viewer state, annotations |
+| `noteStore` | `stores/notes.svelte.ts` | Note CRUD, tree, selection, breadcrumbs |
+| `settingsStore` | `stores/settings.svelte.ts` | Theme, colors, typography, layout, AI config, CSS |
+| `calendarStore` | `stores/calendar.svelte.ts` | Calendar events, note linking |
+| `pdfStore` | `stores/pdf.svelte.ts` | PDF import/list, annotations, references, linking |
+| `aiStore` | `stores/ai.svelte.ts` | Study items, flashcards, model management |
 
-**Critical pattern:** Always pass `JSON.parse(JSON.stringify())` copies to Tauri `invoke`. Svelte 5 `$state` proxies cannot be cloned by `structuredClone` (used internally by Tauri IPC), causing `DataCloneError`.
+### Key Design Decisions
 
-### Settings system
-
-`settingsStore` applies CSS custom properties to `:root` on every change:
-
-```
---bg-primary     --text-primary
---bg-secondary   --text-secondary
---accent         --border
---highlight      --font-sans
-                  --font-mono
---sidebar-width  --editor-font-size
-                  --editor-line-height
-```
-
-The `Presets` tab allows hover preview (via `applyThemeFrom()`) without saving, then applies permanently on click.
-
-### Custom CSS
-
-A `<style id="jstnotes-custom-css">` tag is injected into `<head>` and updated on every keystroke in the CSS editor tab. This overrides any CSS variable or component style.
+- **Svelte 5 runes** (`$state`, `$derived`, `$effect`) for all reactivity
+- **`.svelte.ts` stores** — class-based stores with `$state` fields
+- **PDF rendering** — pdfjs-dist with canvas-per-page + overlay canvas for annotations
+- **IntersectionObserver** — virtual scrolling for PDF pages
+- **Custom horizontal scrollbar** — DOM-based (WebKitGTK doesn't render `::-webkit-scrollbar`)
 
 ---
 
 ## Backend (Rust)
 
-### Module map (Phase 2)
+### Module Map
 
 ```
 src-tauri/src/
-├── main.rs              # Entry point
-├── lib.rs               # Tauri setup, plugin registration, command registration
-├── models.rs            # Data structs + serde + load/persist settings
 ├── commands/
-│   ├── mod.rs
-│   ├── notes.rs         # 9 IPC commands for note CRUD
-│   ├── settings.rs      # get_settings / save_settings
-│   ├── calendar.rs      # 7 IPC commands for events + note linking
-│   ├── ai.rs            # stub (deferred)
-│   └── pdf.rs           # import_pdf, get_pdf_text, save_annotation, get_annotations
+│   ├── notes.rs      — create, get, update, delete, list, tree, breadcrumbs
+│   ├── pdf.rs        — import, annotations, references, linking, delete
+│   ├── ai.rs         — study questions, reviews, Feynman, model fetch
+│   ├── calendar.rs   — events, note linking
+│   └── settings.rs   — get/save settings
 ├── storage/
-│   ├── mod.rs
-│   ├── hybrid.rs        # Sync layer between SQLite + Markdown
-│   ├── sqlite.rs        # SQLite CRUD, tree building, breadcrumbs, PDF tables
-│   └── markdown.rs      # Read/write .md files
-├── ai/                  # Deferred: embeddings, inference, RAG
-│   ├── mod.rs
-│   ├── models.rs
-│   ├── embeddings.rs
-│   ├── inference.rs
-│   └── rag.rs
-└── pdf/                 # PDF parsing, annotations
-    ├── mod.rs
-    ├── extract.rs       # Text extraction from PDF files
-    └── annotations.rs   # Annotation CRUD helpers
+│   ├── sqlite.rs     — Database impl (20+ tables, 40+ methods)
+│   ├── markdown.rs   — File-based note content
+│   └── hybrid.rs     — HybridStorage (wraps DB + Markdown)
+├── ai/
+│   ├── client.rs     — HTTP client (OpenAI-compatible API)
+│   ├── study.rs      — SM-2 algorithm, StudyItem type
+│   └── models.rs     — FlashcardInput
+├── pdf/
+│   ├── extract.rs    — PDF text extraction
+│   └── mod.rs
+├── models.rs          — All data types + serialization
+└── lib.rs             — Tauri entry, state management, command registration
 ```
 
-### Hybrid storage
+### SQLite Schema (11 tables)
 
-**Dual storage** — content in Markdown, metadata in SQLite:
-
-| Aspect | SQLite | Markdown files |
-|---|---|---|
-| Note ID | Primary key | Filename (`{uuid}.md`) |
-| Title | `title` column | First `# ` heading, or filename |
-| Content | — | Full body |
-| Parent ID | `parent_id` column | — |
-| Timestamps | `created_at`, `updated_at` | Filesystem mtime |
-| Path | Computed from hierarchy | `notes/{parent_tree}/{uuid}.md` |
-
-`HybridStorage` ensures both layers stay in sync. Every read/write goes through it.
-
-### SQLite schema
-
-```sql
-CREATE TABLE notes (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    parent_id   TEXT,
-    sort_order  INTEGER DEFAULT 0,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    FOREIGN KEY (parent_id) REFERENCES notes(id)
-);
-
-CREATE TABLE calendar_events (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    date        TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    completed   INTEGER DEFAULT 0,
-    created_at  TEXT NOT NULL
-);
-
-CREATE TABLE event_notes (
-    event_id TEXT NOT NULL,
-    note_id  TEXT NOT NULL,
-    PRIMARY KEY (event_id, note_id),
-    FOREIGN KEY (event_id) REFERENCES calendar_events(id),
-    FOREIGN KEY (note_id) REFERENCES notes(id)
-);
-
-CREATE TABLE pdfs (
-    id          TEXT PRIMARY KEY,
-    title       TEXT,
-    file_path   TEXT NOT NULL,
-    page_count  INTEGER DEFAULT 0,
-    text        TEXT,
-    created_at  TEXT NOT NULL
-);
-
-CREATE TABLE pdf_annotations (
-    id          TEXT PRIMARY KEY,
-    pdf_id      TEXT NOT NULL,
-    page        INTEGER NOT NULL,
-    type        TEXT NOT NULL,       -- 'highlight' | 'note' | 'underline'
-    x           REAL,
-    y           REAL,
-    width       REAL,
-    height      REAL,
-    color       TEXT,
-    content     TEXT,
-    created_at  TEXT NOT NULL,
-    FOREIGN KEY (pdf_id) REFERENCES pdfs(id)
-);
-
-CREATE TABLE note_pdfs (
-    note_id TEXT NOT NULL,
-    pdf_id  TEXT NOT NULL,
-    PRIMARY KEY (note_id, pdf_id),
-    FOREIGN KEY (note_id) REFERENCES notes(id),
-    FOREIGN KEY (pdf_id) REFERENCES pdfs(id)
-);
-```
-
-### Commands
-
-All commands registered in `lib.rs`:
-
-| Command | Description |
+| Table | Purpose |
 |---|---|
-| `create_note` | Create a note with optional parent |
-| `get_note` | Fetch single note by ID |
-| `update_note` | Update title and/or content |
-| `delete_note` | Delete note and all descendants |
-| `list_notes` | List all notes (flat) |
-| `get_children` | Get direct children of a note |
-| `get_breadcrumbs` | Path from root to note |
-| `get_tree` | Full nested tree |
-| `get_settings` | Load AppSettings from disk |
-| `save_settings` | Persist AppSettings + apply theme |
-| `export_note` | Export single note as Markdown |
-| `create_calendar_event` | Create calendar event |
-| `get_calendar_events` | List events for a date range |
-| `update_calendar_event` | Update event title/description/completed |
-| `delete_calendar_event` | Delete event |
-| `link_note_to_event` | Associate a note with an event |
-| `unlink_note_from_event` | Remove note-event association |
-| `get_events_for_note` | Get all events linked to a note |
-| `import_pdf` | Copy PDF to app data, extract text, return metadata |
-| `get_pdf_text` | Return extracted text for a PDF |
-| `save_annotation` | Persist or update an annotation |
-| `get_annotations` | Load all annotations for a PDF |
-| `get_pdfs_for_note` | Get PDFs linked to a note |
-| `link_pdf_to_note` | Associate PDF with a note |
-| `unlink_pdf_from_note` | Remove PDF-note association |
+| `notes` | Note metadata (title, path, parent_id, timestamps) |
+| `calendar_events` | Events (date, title, description, completed) |
+| `event_notes` | Many-to-many: events ↔ notes |
+| `pdfs` | Imported PDFs (title, file_path, page_count, text) |
+| `pdf_annotations` | Highlights, notes on PDF pages |
+| `note_pdfs` | Many-to-many: notes ↔ PDFs |
+| `pdf_references` | Note → PDF page references (for navigation) |
+| `study_items` | Spaced repetition items (question, answer, SM-2 params) |
+| `flashcards` | User-generated and AI-generated Q&A |
+| `note_embeddings` | Embedding vectors for RAG (future) |
 
-### Settings persistence
+### IPC Commands (35 total)
 
-Settings are stored as JSON at `{app_data_dir}/settings.json`. The `AppSettingsState` holds a `Mutex<PathBuf>` pointing to the data directory, initialized once at app startup.
+**Notes (8):** `create_note`, `get_note`, `update_note`, `delete_note`, `list_notes`, `get_children`, `get_breadcrumbs`, `build_tree`
+
+**PDF (13):** `list_pdfs`, `import_pdf`, `get_pdf_text`, `save_annotation`, `get_annotations`, `delete_annotation`, `update_annotation_content`, `get_pdfs_for_note`, `link_pdf_to_note`, `unlink_pdf_from_note`, `delete_pdf`, `get_linked_pdf_ids`, `create_pdf_reference`, `get_pdf_references_for_note`, `delete_pdf_reference`
+
+**AI (8):** `generate_study_questions`, `get_due_reviews`, `rate_review`, `generate_feynman_prompt`, `evaluate_feynman`, `get_study_items`, `fetch_ai_models`, `test_ai_connection`
+
+**Settings (2):** `get_settings`, `save_settings`
+
+**Calendar (6):** `create_calendar_event`, `get_calendar_events`, `update_calendar_event`, `delete_calendar_event`, `link_note_to_event`, `unlink_note_from_event`, `get_events_for_note`
+
+### Managed State
+
+| State | Type | Purpose |
+|---|---|---|
+| `HybridStorage` | Single instance | Wraps Database + MarkdownStorage |
+| `AppSettingsState` | `{app_dir, settings: Mutex<AppSettings>}` | Settings persistence |
 
 ---
 
-## Data flow
+## Data Flow
 
 ### Opening a note
-
-```
-User clicks note in sidebar
-  → NoteTree → selectNode(id)
-    → noteStore.selectNote(id)
-      → invoke('get_breadcrumbs', { id })
-      → invoke('get_note', { id })
-      → updates $state → Editor reacts
-```
+1. User clicks note in tree → `noteStore.selectNote(id)`
+2. `invoke('get_note', {id})` → Rust reads SQLite + Markdown file
+3. Returns full `Note` → Editor renders title + content
+4. Breadcrumbs loaded via `get_breadcrumbs`
 
 ### Auto-save
+1. Editor `oninput` → clears 500ms timeout → sets new timeout
+2. On timeout → `invoke('update_note', {req})`
+3. Rust updates SQLite metadata + writes Markdown file
 
-```
-User types in editor
-  → 500ms debounce
-    → noteStore.updateNote()
-      → invoke('update_note', { id, title, content })
-        → HybridStorage.save()
-          → SQLite update + Markdown write
-```
+### Generating study questions (AI)
+1. User clicks Generate → `invoke('generate_study_questions', {noteId})`
+2. Rust reads note + PDF refs + calendar events
+3. IF API key configured: sends prompt to Groq/OpenAI → parses JSON → saves to `study_items`
+4. IF no API key: extracts from headings, bold text, bullet points (rule-based)
+5. Returns `StudyItem[]` → frontend shows cards
+
+### Feynman Technique
+1. User clicks Start Feynman → Rust sends note content to API
+2. API returns challenge question → user types explanation → submit
+3. Rust sends note + explanation to API → returns conversational feedback
+4. Language automatically matches user's content
 
 ### Opening a PDF
+1. User clicks PDF in library → `pdfStore.openPdf(meta)`
+2. `invoke('get_annotations')` + `readFile` (tauri-plugin-fs)
+3. PDF rendered via pdfjs-dist with `IntersectionObserver` for lazy loading
+4. Annotation overlay canvas drawn per page
+5. Search highlights overlaid on search
 
-```
-User clicks "Open PDF" in toolbar
-  → File dialog (tauri-plugin-dialog)
-    → invoke('import_pdf', { filePath })
-      → Copy PDF to {app_data_dir}/pdfs/{uuid}.pdf
-      → Extract text via pdf-extract
-      → Insert into pdfs table
-      → Return PdfMetadata
-    → PdfViewer.svelte renders PDF.js
-      → Load PDF from copied path via tauri-plugin-fs
-      → Render canvases per page
-```
-
-### Saving an annotation
-
-```
-User highlights text or adds note
-  → Annotation overlay captures position + type + content
-    → invoke('save_annotation', { pdfId, page, type, x, y, w, h, color, content })
-      → Upsert pdf_annotations table
-      → Return annotation ID
-    → Overlay renders the annotation shape
-```
-
----
-
-## Key design decisions
-
-| Decision | Rationale |
-|---|---|
-| `.svelte.ts` for stores | Svelte 5 requires runes in module files to be `.svelte.ts` |
-| `JSON.parse(JSON.stringify())` for deep copies | Avoids `DataCloneError` from `structuredClone` on `$state` proxies |
-| Vite `target: 'esnext'` | Tauri's webview (modern Chromium) supports all ESNext features |
-| Devtools auto-open in debug | `window.open_devtools()` in Rust for debug builds |
-| `expanded = $state(true)` on TreeItem | Nodes start collapsed; saves rendering on large trees |
-| PDF.js over custom renderer | Mature, handles all PDF features, Svelte overlay for annotations |
-| pdf-extract for Rust extraction | Pure Rust, no system deps, extracts text + metadata |
-| Annotation coords in relative % | Scales correctly with zoom / window resize |
-
----
-
-## Future architecture (Phase 1 + 3)
-
-### AI pipeline (deferred, see `docs/PHASE_1_AI.md`)
-
-```
-User query
-  → Embedding → Vector search (cosine similarity)
-    → Context retrieval → LLM prompt
-      → Streamed response → ChatPanel / FlashCard generation
-```
-
-### Graph view (Phase 3)
-
-```
-D3.js / Canvas rendering
-  → Nodes = notes
-    → Edges = parent-child + backlinks + AI-suggested connections
-      → Force-directed layout
-```
+### Rate a review (SM-2)
+1. User rates 1-5 → `invoke('rate_review', {itemId, quality})`
+2. SM-2 algorithm computes: new interval, ease factor, repetitions
+3. `next_review` set based on quality score

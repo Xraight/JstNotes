@@ -1,4 +1,3 @@
-pub mod embeddings;
-pub mod inference;
+pub mod client;
 pub mod models;
-pub mod rag;
+pub mod study;

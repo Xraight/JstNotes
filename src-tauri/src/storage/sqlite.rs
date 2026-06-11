@@ -131,6 +131,54 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_pdf_refs_pdf ON pdf_references(pdf_id);
             ",
         )?;
+
+        // AI tables
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS note_embeddings (
+                note_id     TEXT PRIMARY KEY,
+                embedding   BLOB NOT NULL,
+                updated_at  TEXT NOT NULL,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS flashcards (
+                id          TEXT PRIMARY KEY,
+                note_id     TEXT NOT NULL,
+                question    TEXT NOT NULL,
+                answer      TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                reviewed    INTEGER DEFAULT 0,
+                difficulty  INTEGER DEFAULT 3,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_flashcards_note ON flashcards(note_id);
+            ",
+        )?;
+
+        // Study items for spaced repetition
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS study_items (
+                id              TEXT PRIMARY KEY,
+                note_id         TEXT NOT NULL,
+                question        TEXT NOT NULL,
+                answer          TEXT NOT NULL,
+                created_at      TEXT NOT NULL,
+                next_review     TEXT NOT NULL,
+                interval_days   INTEGER NOT NULL DEFAULT 1,
+                ease_factor     REAL NOT NULL DEFAULT 2.5,
+                repetitions     INTEGER NOT NULL DEFAULT 0,
+                reviewed_at     TEXT,
+                source_page     INTEGER,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_study_items_note ON study_items(note_id);
+            CREATE INDEX IF NOT EXISTS idx_study_items_review ON study_items(next_review);
+            ",
+        )?;
         Ok(())
     }
 
@@ -650,5 +698,148 @@ impl Database {
         conn.execute("DELETE FROM note_pdfs WHERE pdf_id = ?1", params![pdf_id])?;
         conn.execute("DELETE FROM pdfs WHERE id = ?1", params![pdf_id])?;
         Ok(())
+    }
+
+    pub fn upsert_embedding(&self, note_id: &str, embedding: &[f32]) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+        conn.execute(
+            "INSERT OR REPLACE INTO note_embeddings (note_id, embedding, updated_at) VALUES (?1, ?2, ?3)",
+            params![note_id, bytes, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_all_embeddings(&self) -> SqlResult<Vec<(String, Vec<f32>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT note_id, embedding FROM note_embeddings")?;
+        let rows = stmt.query_map([], |row| {
+            let note_id: String = row.get(0)?;
+            let bytes: Vec<u8> = row.get(1)?;
+            let floats: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            Ok((note_id, floats))
+        })?;
+        rows.collect()
+    }
+
+    pub fn save_flashcards(&self, cards: &[crate::ai::models::FlashcardInput]) -> SqlResult<usize> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut count = 0;
+        for c in cards {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO flashcards (id, note_id, question, answer, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, c.note_id, c.question, c.answer, now],
+            )?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    pub fn get_flashcards_for_note(&self, note_id: &str) -> SqlResult<Vec<crate::models::Flashcard>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, note_id, question, answer, created_at, reviewed, difficulty FROM flashcards WHERE note_id = ?1 ORDER BY created_at",
+        )?;
+        let cards = stmt.query_map(params![note_id], |row| {
+            Ok(crate::models::Flashcard {
+                id: row.get(0)?,
+                note_id: row.get(1)?,
+                question: row.get(2)?,
+                answer: row.get(3)?,
+                created_at: row.get(4)?,
+                reviewed: row.get(5)?,
+                difficulty: row.get(6)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(cards)
+    }
+
+    pub fn delete_flashcards_for_note(&self, note_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM flashcards WHERE note_id = ?1", params![note_id])?;
+        Ok(())
+    }
+
+    pub fn save_study_items(&self, items: &[crate::ai::study::StudyItem]) -> SqlResult<usize> {
+        let conn = self.conn.lock().unwrap();
+        let mut count = 0;
+        for item in items {
+            conn.execute(
+                "INSERT INTO study_items (id, note_id, question, answer, created_at, next_review, interval_days, ease_factor, repetitions, reviewed_at, source_page)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    item.id, item.note_id, item.question, item.answer,
+                    item.created_at, item.next_review, item.interval_days,
+                    item.ease_factor, item.repetitions, item.reviewed_at, item.source_page,
+                ],
+            )?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    pub fn get_due_study_items(&self) -> SqlResult<Vec<crate::ai::study::StudyItem>> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().date_naive().to_string();
+        let mut stmt = conn.prepare(
+            "SELECT id, note_id, question, answer, created_at, next_review, interval_days, ease_factor, repetitions, reviewed_at, source_page
+             FROM study_items WHERE next_review <= ?1 ORDER BY next_review, note_id",
+        )?;
+        let items = stmt.query_map(params![now], |row| {
+            Ok(crate::ai::study::StudyItem {
+                id: row.get(0)?,
+                note_id: row.get(1)?,
+                question: row.get(2)?,
+                answer: row.get(3)?,
+                created_at: row.get(4)?,
+                next_review: row.get(5)?,
+                interval_days: row.get(6)?,
+                ease_factor: row.get(7)?,
+                repetitions: row.get(8)?,
+                reviewed_at: row.get(9)?,
+                source_page: row.get(10)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn update_study_item_review(&self, id: &str, interval_days: i32, ease_factor: f64, repetitions: i32, next_review: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE study_items SET interval_days = ?1, ease_factor = ?2, repetitions = ?3, next_review = ?4, reviewed_at = ?5 WHERE id = ?6",
+            params![interval_days, ease_factor, repetitions, next_review, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_study_items_for_note(&self, note_id: &str) -> SqlResult<Vec<crate::ai::study::StudyItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, note_id, question, answer, created_at, next_review, interval_days, ease_factor, repetitions, reviewed_at, source_page
+             FROM study_items WHERE note_id = ?1 ORDER BY created_at",
+        )?;
+        let items = stmt.query_map(params![note_id], |row| {
+            Ok(crate::ai::study::StudyItem {
+                id: row.get(0)?,
+                note_id: row.get(1)?,
+                question: row.get(2)?,
+                answer: row.get(3)?,
+                created_at: row.get(4)?,
+                next_review: row.get(5)?,
+                interval_days: row.get(6)?,
+                ease_factor: row.get(7)?,
+                repetitions: row.get(8)?,
+                reviewed_at: row.get(9)?,
+                source_page: row.get(10)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(items)
     }
 }

@@ -1,12 +1,34 @@
 <script lang="ts">
+  /**
+   * PdfViewer — PDF rendering, annotation, search, and zoom.
+   *
+   * Architecture:
+   *   Each PDF page is rendered to an HTML canvas inside a position:relative container.
+   *   A transparent overlay canvas (pointer-events:none) is stacked on top for
+   *   annotations, search highlights, and drag previews — so they can be cleared
+   *   and redrawn independently of the expensive PDF re-render.
+   *
+   *   Lazy loading: an IntersectionObserver on pdf-body triggers renderPage() when
+   *   a placeholder enters the viewport (600px margin). This avoids rendering all
+   *   pages at once for large PDFs.
+   *
+   *   Zoom: changeScale() uses an anchor-based approach to preserve scroll position:
+   *   capture the first visible page + its viewport offset → re-render all visible
+   *   pages at the new scale → restore scroll via RAF double-pass correction.
+   *   A generation counter (zoomGen) aborts stale concurrent zoom calls.
+   *
+   *   Horizontal scroll: WebKitGTK (Tauri on Linux) doesn't render CSS scrollbars,
+   *   so a custom DOM-based scrollbar is rendered at the bottom of the panel.
+   */
   import { onDestroy } from 'svelte';
   import { pdfStore } from '../stores/pdf';
   import { noteStore } from '../stores/notes';
 
   let { pdfWidth = 50 }: { pdfWidth?: number } = $props();
 
-  let viewerEl = $state<HTMLDivElement>();
-  let bodyEl = $state<HTMLDivElement>();
+  // --- DOM refs ---
+  let viewerEl = $state<HTMLDivElement>();  // .pdf-pages container
+  let bodyEl = $state<HTMLDivElement>();    // .pdf-body scroll container
   let currentPage = $state(1);
   let numPages = $state(0);
   let scale = $state(1);
@@ -58,6 +80,14 @@
     pageHeight = 800;
   }
 
+  /**
+   * Renders a single PDF page to canvas + overlay inside a position:relative container.
+   * Uses DPR-aware sizing (canvas internal pixels vs CSS display pixels).
+   * The overlay canvas is drawn on top with pointer-events:none so mouse events
+   * pass through to the PDF canvas below.
+   * After rendering, updates pageHeight (used for scroll estimation) and expands
+   * viewerEl's minWidth if the viewport is wider (for horizontal scrolling at zoom>1).
+   */
   async function renderPage(pageNum: number) {
     if (renderedPages.has(pageNum) || pendingPages.has(pageNum) || !pdfDoc || !viewerEl) return;
     pendingPages.add(pageNum);
@@ -150,6 +180,12 @@
     }
   }
 
+  /**
+   * Loads a PDF document via pdfjs-dist, creates placeholder divs for each page,
+   * renders page 1, and sets up the IntersectionObserver for lazy loading.
+   * The try/finally ensures isLoading is always reset even on error.
+   * If pdfStore.targetPage is set (from an editor badge click), scrolls to that page.
+   */
   async function loadPdf() {
     if (!pdfStore.pdfData || !viewerEl) return;
     resetState();
@@ -203,8 +239,20 @@
     }
   }
 
+  // --- Zoom ---
+
+  // Generation counter: each changeScale call increments this. After every await,
+  // we check if a newer zoom call has started. If so, abort — this prevents race
+  // conditions when the user clicks +/- rapidly.
   let zoomGen = 0;
 
+  /**
+   * Changes the zoom scale. Uses anchor-based scroll preservation:
+   * 1. Find the first visible rendered page + its viewport offset
+   * 2. Clear all rendered pages and re-render at new scale
+   * 3. Restore scroll position via two RAF passes (layout stabilization)
+   * The baseW uses bodyEl width (stable) not viewerEl (changes with minWidth).
+   */
   async function changeScale(newScale: number) {
     const gen = ++zoomGen;
     if (!viewerEl || !bodyEl || isLoading) return;
@@ -306,6 +354,13 @@
     bodyEl.scrollLeft = ratio * (bodyEl.scrollWidth - bodyEl.clientWidth);
   }
 
+  /**
+   * Draws all annotations + search highlights + drag preview on the overlay canvas.
+   * Called from renderPage (initial) and redrawPageAnnotations (updates).
+   * Annotations are stored in pdfStore.annotations with page-relative coords (0-1).
+   * Search highlights overlay matching text positions. The drag preview shows
+   * a dashed rectangle when the user is actively drawing a highlight/note region.
+   */
   function drawAnnotations(pageNum: number, ctx: CanvasRenderingContext2D, vpW: number, vpH: number) {
     const annotations = pdfStore.annotations.filter(a => a.page === pageNum);
     if (annotations.length === 0) return;
@@ -392,6 +447,11 @@
       redrawPageAnnotations(pageNum);
     }
   }
+
+  // --- Search ---
+
+  // Clears and redraws overlays on all currently rendered pages.
+  // Used after annotation changes, search updates, and zoom resets.
 
   function toggleSearch() {
     searchOpen = !searchOpen;
@@ -544,6 +604,9 @@
     }
   }
 
+  // --- Annotation interactions ---
+  // Right-click on any annotation to delete it. Works in all tool modes.
+  // Uses findAnnotationAt to detect which annotation is under the cursor.
   async function handleContextMenu(e: MouseEvent) {
     e.preventDefault();
     const found = findAnnotationAt(e, 0.03);

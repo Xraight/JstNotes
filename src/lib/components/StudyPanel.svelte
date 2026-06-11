@@ -1,0 +1,229 @@
+<script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
+  import { aiStore } from '../stores/ai';
+  import { noteStore } from '../stores/notes';
+
+  let currentIdx = $state(0);
+  let revealed = $state(false);
+  let showFeynman = $state(false);
+  let feynmanPrompt = $state('');
+  let feynmanAnswer = $state('');
+  let feynmanFeedback = $state('');
+  let feynmanGenerating = $state(false);
+
+  async function startFeynman() {
+    if (!noteStore.selectedNote) return;
+    showFeynman = true;
+    feynmanPrompt = 'Loading…';
+    feynmanAnswer = '';
+    feynmanFeedback = '';
+    try {
+      feynmanPrompt = await invoke('generate_feynman_prompt', { noteId: noteStore.selectedNote!.id });
+      if (!feynmanPrompt) feynmanPrompt = 'Explain a key concept from this note in your own words.';
+    } catch {
+      feynmanPrompt = 'Explain a key concept from this note in your own words.';
+    }
+  }
+
+  async function submitFeynman() {
+    if (!noteStore.selectedNote || !feynmanAnswer.trim()) return;
+    feynmanGenerating = true;
+    try {
+      feynmanFeedback = await invoke('evaluate_feynman', { noteId: noteStore.selectedNote!.id, userExplanation: feynmanAnswer });
+    } catch {
+      feynmanFeedback = 'Failed to get AI feedback.';
+    } finally {
+      feynmanGenerating = false;
+    }
+  }
+
+  let quizItem = $derived(aiStore.dueReviews[currentIdx] ?? null);
+</script>
+
+<div class="study-panel" class:open={aiStore.studyPanelOpen}>
+  <div class="study-toolbar">
+    <span class="study-title">Study Dashboard</span>
+    <button class="study-tool-btn" onclick={aiStore.togglePanel}>✕</button>
+  </div>
+
+  <div class="study-body">
+    <!-- Connection status -->
+    {#if !aiStore.apiConfigured}
+      <div class="study-status">
+        <span>AI not configured</span>
+        <span class="study-hint">Add Groq API key in Settings → AI</span>
+      </div>
+    {:else}
+
+    {#if aiStore.dueReviews.length > 0}
+    <!-- Quiz mode -->
+      <div class="study-section">
+        <div class="study-section-header">
+          Due for Review — {aiStore.dueReviews.length} items
+        </div>
+        <div class="quiz-card">
+          <div class="quiz-progress">
+            <span class="quiz-counter">{currentIdx + 1} / {aiStore.dueReviews.length}</span>
+            <span class="quiz-note">from "{noteStore.notes.find(n => n.id === quizItem?.note_id)?.title || 'Note'}"</span>
+          </div>
+          <div class="quiz-question">{quizItem?.question}</div>
+          {#if revealed}
+            <div class="quiz-divider"></div>
+            <div class="quiz-answer">{quizItem?.answer}</div>
+          {/if}
+        </div>
+
+        <div class="quiz-actions">
+          {#if !revealed}
+            <button class="study-btn study-primary" onclick={() => revealed = true}>Reveal Answer</button>
+          {:else}
+            <span class="rate-label">How well did you recall?</span>
+            <div class="rate-buttons">
+              {#each [1, 2, 3, 4, 5] as q}
+                <button
+                  class="rate-btn"
+                  title={q === 1 ? 'Completely forgot' : q === 3 ? 'Recalled with effort' : 'Perfect recall'}
+                  onclick={async () => {
+                    if (quizItem) await aiStore.rateReview(quizItem.id, q);
+                    revealed = false;
+                    if (currentIdx >= aiStore.dueReviews.length - 1) currentIdx = 0;
+                    else currentIdx++;
+                  }}
+                >
+                  {q}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {:else}
+      <div class="study-empty">
+        <p>No reviews due. Select a note and click "Generate" in the toolbar.</p>
+      </div>
+    {/if}
+    {/if}
+
+    <!-- Feynman mode -->
+    <div class="study-section">
+      <div class="study-section-header">Feynman Technique</div>
+      {#if !showFeynman}
+        <button class="study-btn" onclick={startFeynman} disabled={!noteStore.selectedNote || !aiStore.apiConfigured}>
+          Start Feynman Exercise
+        </button>
+      {:else}
+        <div class="feynman-prompt">{feynmanPrompt}</div>
+        <textarea
+          class="feynman-input"
+          bind:value={feynmanAnswer}
+          placeholder="Explain the concept in your own words..."
+          rows={4}
+          disabled={feynmanGenerating}
+        ></textarea>
+        <div class="feynman-actions">
+          <button class="study-btn" onclick={() => showFeynman = false}>Cancel</button>
+          <button class="study-btn study-primary" onclick={submitFeynman} disabled={!feynmanAnswer.trim() || feynmanGenerating}>
+            {feynmanGenerating ? '…' : 'Submit'}
+          </button>
+        </div>
+        {#if feynmanFeedback}
+          <div class="feynman-feedback">{feynmanFeedback}</div>
+        {/if}
+      {/if}
+    </div>
+  </div>
+</div>
+
+<style>
+  .study-panel {
+    display: none;
+    flex-direction: column;
+    width: 340px;
+    border-left: 1px solid var(--border);
+    background: var(--bg-primary);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .study-panel.open {
+    display: flex;
+  }
+  .study-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+  .study-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .study-tool-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 14px; padding: 2px 6px;
+    border-radius: 4px; color: var(--text-secondary);
+    font-family: inherit;
+  }
+  .study-tool-btn:hover { background: var(--accent); color: var(--text-primary); }
+  .study-body {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .study-status {
+    font-size: 12px; padding: 6px 10px;
+    border-radius: 6px; background: var(--bg-secondary);
+    color: var(--text-secondary); display: flex; align-items: center; gap: 8px;
+  }
+  .study-status.connected { color: #4CAF50; }
+  .study-empty { text-align: center; color: var(--text-secondary); font-size: 13px; padding: 20px; }
+  .study-btn {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 12px; font-size: 12px;
+    cursor: pointer; color: var(--text-primary); font-family: inherit;
+  }
+  .study-btn:hover { border-color: var(--highlight); }
+  .study-btn:disabled { opacity: 0.4; cursor: default; }
+  .study-primary { background: var(--highlight); color: #fff; border-color: var(--highlight); }
+  .study-retry { font-size: 11px; padding: 2px 8px; }
+  .study-section { display: flex; flex-direction: column; gap: 8px; }
+  .study-section-header { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  .quiz-card {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .quiz-progress { display: flex; justify-content: space-between; margin-bottom: 10px; }
+  .quiz-counter { font-size: 11px; color: var(--text-secondary); }
+  .quiz-note { font-size: 11px; color: var(--text-secondary); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+  .quiz-question { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.5; }
+  .quiz-divider { margin: 12px 0; border-top: 1px solid var(--border); }
+  .quiz-answer { font-size: 13px; color: var(--text-primary); line-height: 1.5; }
+  .quiz-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 4px; }
+  .rate-label { font-size: 12px; color: var(--text-secondary); }
+  .rate-buttons { display: flex; gap: 6px; }
+  .rate-btn {
+    width: 34px; height: 34px; border: 1px solid var(--border);
+    border-radius: 50%; background: var(--bg-secondary);
+    color: var(--text-primary); font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit; transition: all 0.1s;
+  }
+  .rate-btn:hover { background: var(--highlight); color: #fff; border-color: var(--highlight); }
+  .feynman-prompt {
+    font-size: 13px; color: var(--text-primary); background: var(--bg-secondary);
+    padding: 10px; border-radius: 6px; line-height: 1.5;
+  }
+  .feynman-input {
+    width: 100%; background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px; font-size: 13px; font-family: var(--font-sans);
+    color: var(--text-primary); resize: vertical; box-sizing: border-box;
+  }
+  .feynman-input:focus { outline: none; border-color: var(--highlight); }
+  .feynman-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .feynman-feedback {
+    font-size: 13px; color: var(--text-primary); background: var(--bg-secondary);
+    padding: 10px; border-radius: 6px; line-height: 1.5; border-left: 3px solid var(--highlight);
+  }
+</style>

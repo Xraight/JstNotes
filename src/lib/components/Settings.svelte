@@ -1,17 +1,34 @@
 <script lang="ts">
   import { settingsStore } from '../stores/settings';
+  import { invoke } from '@tauri-apps/api/core';
+  import { aiStore } from '../stores/ai';
   import { THEME_PRESETS, FONT_PRESETS, type ThemePreset } from '../presets';
   import type { ColorSettings, TypographySettings, LayoutSettings } from '../types';
 
   let { onclose }: { onclose: () => void } = $props();
 
   let s = $derived(settingsStore.settings);
-  let activeTab = $state<'presets' | 'colors' | 'typography' | 'layout' | 'css'>('presets');
+  let activeTab = $state<'presets' | 'colors' | 'typography' | 'layout' | 'css' | 'ai'>('presets');
 
   let tempColors = $state<ColorSettings>({ bg_primary: '', bg_secondary: '', accent: '', highlight: '', text_primary: '', text_secondary: '', border: '' });
   let tempTypo = $state<TypographySettings>({ font_family: '', font_family_mono: '', font_size: 15, line_height: 1.7 });
   let tempLayout = $state<LayoutSettings>({ sidebar_width: 280 });
   let customCSS = $state('');
+  let aiKey = $state('');
+  let aiProvider = $state('groq');
+  let aiModel = $state('llama-3.3-70b-versatile');
+  let aiEnabled = $state(true);
+  let aiEndpoint = $state('');
+  let testResult = $state('');
+  let testing = $state(false);
+  let showAdvanced = $state(false);
+
+  const PROVIDERS = [
+    { id: 'groq', name: 'Groq', price: 'Free', url: 'console.groq.com', desc: 'Llama 3.3 70B. No credit card.', defaultModel: 'llama-3.3-70b-versatile', endpoint: 'https://api.groq.com/openai/v1', badge: '⭐ Best for study' },
+    { id: 'opencode', name: 'OpenCode Go', price: '$10/mo', url: 'opencode.ai/go', desc: '12 open source models.', defaultModel: 'deepseek-v4-flash', endpoint: 'https://opencode.ai/zen/go/v1', badge: '' },
+    { id: 'openai', name: 'OpenAI', price: 'Pay per use', url: 'platform.openai.com', desc: 'GPT-4o mini, GPT-4o.', defaultModel: 'gpt-4o-mini', endpoint: 'https://api.openai.com/v1', badge: '' },
+  ];
+
   let previewPreset = $state<ThemePreset | null>(null);
   let previewFont = $state<string | null>(null);
   let activeFontId = $derived(FONT_PRESETS.find(fp =>
@@ -33,6 +50,11 @@
     tempColors = deepCopy(s.colors);
     tempTypo = deepCopy(s.typography);
     tempLayout = deepCopy(s.layout);
+    aiKey = s.ai_api_key || '';
+    aiProvider = s.ai_provider || 'groq';
+    aiModel = s.ai_model || 'llama-3.3-70b-versatile';
+    aiEnabled = s.ai_enabled ?? true;
+    aiEndpoint = s.ai_endpoint || '';
   });
 
   function deepCopy<T>(obj: T): T {
@@ -77,6 +99,40 @@
 
   function applyCustomCSS() {
     settingsStore.setCustomCSS(customCSS);
+  }
+
+  function saveAiSettings() {
+    settingsStore.settings.ai_provider = aiProvider;
+    settingsStore.settings.ai_api_key = aiKey;
+    settingsStore.settings.ai_model = aiModel;
+    settingsStore.settings.ai_enabled = aiEnabled;
+    settingsStore.settings.ai_endpoint = aiEndpoint;
+    settingsStore.save();
+  }
+
+  function selectProvider(id: string) {
+    aiProvider = id;
+    const p = PROVIDERS.find(pp => pp.id === id);
+    if (p) {
+      aiEndpoint = p.endpoint;
+      aiModel = p.defaultModel;
+    }
+    saveAiSettings();
+  }
+
+  async function testConnection() {
+    testing = true;
+    testResult = 'Testing…';
+    try {
+      saveAiSettings();
+      const r = await invoke('test_ai_connection');
+      const count = await aiStore.fetchModels();
+      testResult = `✅ ${Array.isArray(count) ? count.length : 0} models · ${r.trim()}`;
+    } catch (e: any) {
+      testResult = 'Error: ' + (e?.toString() || 'Unknown');
+    } finally {
+      testing = false;
+    }
   }
 
   function close() {
@@ -146,6 +202,9 @@
       </button>
       <button class="tab" class:active={activeTab === 'css'} onclick={() => activeTab = 'css'}>
         CSS
+      </button>
+      <button class="tab" class:active={activeTab === 'ai'} onclick={() => activeTab = 'ai'}>
+        AI
       </button>
     </div>
 
@@ -293,6 +352,82 @@
           <p class="hint">Override any style with your own CSS. Changes apply immediately.</p>
           <textarea class="css-editor" placeholder={"/* Your custom CSS here */\n.sidebar { background: red; }"} bind:value={customCSS}
             oninput={() => settingsStore.setCustomCSS(customCSS)}></textarea>
+        </div>
+      {/if}
+
+      {#if activeTab === 'ai'}
+        <div class="section">
+          <h3>1. Choose Provider</h3>
+
+          <div class="provider-cards">
+            {#each PROVIDERS as p}
+              <button
+                class="provider-card"
+                class:selected={aiProvider === p.id}
+                onclick={() => selectProvider(p.id)}
+              >
+                <div class="provider-name">{p.name}</div>
+                <div class="provider-price">{p.price}</div>
+                <div class="provider-desc">{p.desc}</div>
+                <div class="provider-url">🔑 {p.url}</div>
+                {#if p.badge}
+                  <div class="provider-badge">{p.badge}</div>
+                {/if}
+              </button>
+            {/each}
+          </div>
+
+          <h3 style="margin-top:18px;">2. API Key</h3>
+          <div class="form-row">
+            <input type="password" bind:value={aiKey} onchange={saveAiSettings} placeholder={`Paste your ${aiProvider === 'groq' ? 'Groq' : aiProvider === 'openai' ? 'OpenAI' : 'OpenCode Go'} API key here…`} />
+          </div>
+
+          <h3 style="margin-top:16px;">3. Model</h3>
+          <div class="form-row">
+            {#if aiStore.availableModels.length > 0}
+              <select bind:value={aiModel} onchange={saveAiSettings}>
+                {#each aiStore.availableModels as m}
+                  <option value={m.id}>{m.name}</option>
+                {/each}
+              </select>
+            {:else}
+              <input type="text" bind:value={aiModel} onchange={saveAiSettings}
+                placeholder={aiProvider === 'groq' ? 'llama-3.3-70b-versatile' : 'model-id'} />
+              <p class="hint" style="margin-top:4px">Click Test to auto-load available models</p>
+            {/if}
+          </div>
+
+          <div class="test-row" style="margin-bottom:8px;">
+            <label class="checkbox-label">
+              <input type="checkbox" bind:checked={aiEnabled} onchange={saveAiSettings} />
+              Enable AI
+            </label>
+            <button class="study-btn" onclick={testConnection} disabled={testing || !aiKey}>
+              {testing ? '…' : 'Test'}
+            </button>
+            {#if testResult}
+              <span class="test-result" class:ok={testResult.startsWith('Connected')}>{testResult}</span>
+            {/if}
+          </div>
+
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="advanced-toggle" onclick={() => showAdvanced = !showAdvanced} onkeydown={(e) => e.key === 'Enter' && (showAdvanced = !showAdvanced)}>
+            {showAdvanced ? '▼' : '▶'} Advanced
+          </div>
+          {#if showAdvanced}
+            <div class="form-row">
+              <label>Endpoint</label>
+              <input type="text" bind:value={aiEndpoint} onchange={saveAiSettings} />
+            </div>
+            <div class="form-row">
+              <label>Custom provider</label>
+              <input type="text" value={aiProvider} onchange={(e) => { aiProvider = e.currentTarget.value; saveAiSettings(); }} />
+            </div>
+          {/if}
+
+          <p class="hint" style="margin-top:12px">
+            Notes are sent to the configured API endpoint.
+          </p>
         </div>
       {/if}
     </div>
@@ -598,4 +733,78 @@
     background: var(--highlight);
     color: #fff;
   }
+  .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .form-row label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-row select, .form-row input {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    outline: none;
+    color-scheme: dark;
+  }
+  .form-row select option {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .form-row select:focus, .form-row input:focus {
+    border-color: var(--highlight);
+  }
+  .checkbox-label {
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; text-transform: none; font-size: 13px;
+    letter-spacing: 0; font-weight: 400; color: var(--text-primary);
+  }
+  .test-row {
+    display: flex; align-items: center; gap: 10px; margin-top: 8px;
+  }
+  .test-result {
+    font-size: 12px; color: var(--highlight);
+  }
+  .test-result.ok { color: #4CAF50; }
+  .provider-cards {
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  .provider-card {
+    flex: 1; min-width: 180px; max-width: 220px;
+    background: var(--bg-primary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+    cursor: pointer; text-align: left;
+    color: var(--text-primary); font-family: inherit;
+    transition: border-color 0.15s; position: relative;
+  }
+  .provider-card:hover { border-color: var(--highlight); }
+  .provider-card.selected {
+    border-color: var(--highlight);
+    box-shadow: 0 0 0 2px var(--highlight);
+  }
+  .provider-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .provider-price { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .provider-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .provider-url { font-size: 11px; color: var(--text-secondary); opacity: 0.7; }
+  .provider-badge {
+    position: absolute; top: -8px; right: 8px;
+    background: var(--highlight); color: #fff;
+    font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 10px;
+  }
+  .advanced-toggle {
+    font-size: 12px; color: var(--text-secondary);
+    cursor: pointer; padding: 4px 0; user-select: none;
+  }
+  .advanced-toggle:hover { color: var(--text-primary); }
 </style>

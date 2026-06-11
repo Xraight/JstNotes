@@ -64,6 +64,11 @@ export interface AppSettings {
   colors: ColorSettings;
   typography: TypographySettings;
   layout: LayoutSettings;
+  ai_provider: string;
+  ai_api_key: string;
+  ai_model: string;
+  ai_enabled: boolean;
+  ai_endpoint: string;
 }
 
 export interface CalendarEvent {
@@ -129,4 +134,39 @@ export interface CreatePdfReferenceInput {
   page_end: number | null;
   label: string;
   annotation_id: string | null;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface Flashcard {
+  id: string;
+  note_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  reviewed: number;
+  difficulty: number;
+}
+
+export interface OllamaModel {
+  name: string;
+  modified_at: string | null;
+  size: number | null;
+}
+
+export interface StudyItem {
+  id: string;
+  note_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  next_review: string;
+  interval_days: number;
+  ease_factor: number;
+  repetitions: number;
+  reviewed_at: string | null;
+  source_page: number | null;
 }
