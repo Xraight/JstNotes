@@ -62,7 +62,7 @@
     </button>
   </div>
 
-  {#if items.length > 0}
+  <div class="fc-scroll">  {#if items.length > 0}
     <div class="fc-card" onclick={toggleReveal}>
       <div class="fc-counter">{currentIdx + 1} / {items.length}</div>
       <div class="fc-question">{items[currentIdx].question}</div>
@@ -106,10 +106,12 @@
       {/if}
     </div>
   {/if}
+  </div>
 </div>
 
 <style>
-  .flashcards { display: flex; flex-direction: column; padding: 12px; font-family: var(--font-sans); }
+  .flashcards { display: flex; flex-direction: column; font-family: var(--font-sans); }
+  .fc-scroll { max-height: 50vh; overflow-y: auto; padding: 12px 0 12px 12px; }
   .fc-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
   .fc-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
   .fc-btn {
