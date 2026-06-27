@@ -47,7 +47,7 @@ JSTNotes is a hybrid desktop app. The Tauri webview (Svelte 5) communicates with
 ### Component Tree
 
 ```
-App.svelte
+App.svelte (Editor ↔ StudyHome toggle)
 ├── Sidebar
 │   ├── NoteTree.svelte → TreeItem.svelte (recursive)
 │   ├── Calendar.svelte
@@ -55,11 +55,12 @@ App.svelte
 ├── Main
 │   ├── Breadcrumbs.svelte
 │   ├── Editor.svelte
-│   │   └── FlashCard.svelte (toggleable)
+│   │   └── FlashCard.svelte
 │   ├── PdfViewer.svelte
-│   └── StudyPanel.svelte
+│   └── StudyHome.svelte (full-screen grid dashboard)
+│       └── FlashCard.svelte (reused as widget)
 ├── StatusBar
-└── Settings.svelte (modal)
+└── Settings.svelte (modal, Tips tab)
 ```
 
 ### Stores (Svelte 5 Runes)
@@ -109,7 +110,7 @@ src-tauri/src/
 └── lib.rs             — Tauri entry, state management, command registration
 ```
 
-### SQLite Schema (11 tables)
+### SQLite Schema (13 tables)
 
 | Table | Purpose |
 |---|---|
@@ -121,20 +122,22 @@ src-tauri/src/
 | `note_pdfs` | Many-to-many: notes ↔ PDFs |
 | `pdf_references` | Note → PDF page references (for navigation) |
 | `study_items` | Spaced repetition items (question, answer, SM-2 params) |
-| `flashcards` | User-generated and AI-generated Q&A |
-| `note_embeddings` | Embedding vectors for RAG (future) |
+| `study_log` | Review history (item_id, quality, timestamp) |
+| `flashcards` | AI-generated Q&A |
+| `note_embeddings` | Embedding vectors for future RAG |
+| `notes_fts` | FTS5 full-text search index |
 
-### IPC Commands (35 total)
+### IPC Commands (42 total)
 
 **Notes (8):** `create_note`, `get_note`, `update_note`, `delete_note`, `list_notes`, `get_children`, `get_breadcrumbs`, `build_tree`
 
-**PDF (13):** `list_pdfs`, `import_pdf`, `get_pdf_text`, `save_annotation`, `get_annotations`, `delete_annotation`, `update_annotation_content`, `get_pdfs_for_note`, `link_pdf_to_note`, `unlink_pdf_from_note`, `delete_pdf`, `get_linked_pdf_ids`, `create_pdf_reference`, `get_pdf_references_for_note`, `delete_pdf_reference`
+**PDF (14):** `list_pdfs`, `import_pdf`, `get_pdf_text`, `save_annotation`, `get_annotations`, `delete_annotation`, `update_annotation_content`, `get_pdfs_for_note`, `link_pdf_to_note`, `unlink_pdf_from_note`, `delete_pdf`, `get_linked_pdf_ids`, `create_pdf_reference`, `get_pdf_references_for_note`, `delete_pdf_reference`
 
-**AI (8):** `generate_study_questions`, `get_due_reviews`, `rate_review`, `generate_feynman_prompt`, `evaluate_feynman`, `get_study_items`, `fetch_ai_models`, `test_ai_connection`
+**AI (14):** `generate_study_questions`, `generate_elaboration_questions`, `generate_concrete_example`, `get_due_reviews`, `rate_review`, `get_study_stats`, `search_notes`, `rebuild_fts`, `generate_feynman_prompt`, `evaluate_feynman`, `get_study_items`, `fetch_ai_models`, `test_ai_connection`
 
 **Settings (2):** `get_settings`, `save_settings`
 
-**Calendar (6):** `create_calendar_event`, `get_calendar_events`, `update_calendar_event`, `delete_calendar_event`, `link_note_to_event`, `unlink_note_from_event`, `get_events_for_note`
+**Calendar (7):** `create_calendar_event`, `get_calendar_events`, `update_calendar_event`, `delete_calendar_event`, `link_note_to_event`, `unlink_note_from_event`, `get_events_for_note`
 
 ### Managed State
 
@@ -182,3 +185,27 @@ src-tauri/src/
 1. User rates 1-5 → `invoke('rate_review', {itemId, quality})`
 2. SM-2 algorithm computes: new interval, ease factor, repetitions
 3. `next_review` set based on quality score
+4. Review logged to `study_log` for statistics
+
+### Study Home (Grid Dashboard)
+1. Toggles full-screen via `📚 Study` button in Editor toolbar
+2. CSS Grid layout: Stats (top-left), Quick Actions (top-center), Search (top-right)
+3. Quiz + Feynman/Examples (middle row), Cards (bottom row)
+4. Mutually exclusive with Editor/PdfViewer: opening a PDF auto-closes Study Home
+
+### Note Search (FTS5)
+1. User types in Search widget → debounced 250ms
+2. `search_notes(query)` → FTS5 full-text search on titles + content
+3. Returns ranked results with `<mark>` highlighted snippets
+4. Click result → opens note in Editor
+
+### Calendar Priority
+1. `get_due_reviews` fetches events for each note via `get_events_for_note`
+2. Computes `days_until_event` for the nearest incomplete event
+3. Items with upcoming events (exams, deadlines) sort first
+4. Badge `📅 2d` shown on Quiz items with events ≤7 days away
+
+### Study Statistics
+1. `get_study_stats` queries `study_log` for reviews today, streak, total, 7-day activity
+2. Streak algorithm: walk backward from today, count consecutive days with ≥1 review
+3. Displayed in Stats widget and Stats tab

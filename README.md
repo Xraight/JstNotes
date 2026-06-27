@@ -25,8 +25,14 @@ A note-taking desktop app with cloud AI study tools, PDF annotations, adaptive l
 
 ### AI Study Tools (Phase 1 ✅)
 - **Flashcards** — AI-generated active recall questions from notes + PDF context + calendar
+- **Deep Questions** — elaborative interrogation: "why/how" questions that connect concepts
 - **Spaced Repetition (SM-2)** — Study Dashboard with daily reviews, self-rating 1-5
 - **Feynman Technique** — AI challenges you to explain a concept, then evaluates your explanation
+- **Concrete Examples** — AI generates analogies and real-world examples for abstract concepts
+- **Interleaving** — Quiz mode always mixes topics for better learning transfer
+- **Calendar Priority** — questions linked to upcoming events (exams) appear first
+- **Study Statistics** — daily streak, total reviews, 7-day activity chart
+- **Note Search** — FTS5 full-text search across all notes with highlighted snippets
 - **Multi-provider**: Groq (free), OpenAI, OpenCode Go
 - **Auto-detect models**: fetches available models from provider API
 - **Offline fallback**: rule-based question extraction from headings, bold text, bullet points
@@ -78,7 +84,7 @@ JstNotes/
 │   │   ├── stores/         # Svelte 5 runes stores
 │   │   ├── types.ts        # Shared TS interfaces
 │   │   └── presets.ts      # Theme presets
-│   ├── App.svelte          # Root layout
+│   ├── App.svelte          # Root layout (editor / study home toggle)
 │   └── main.ts             # Entry point
 ├── src-tauri/              # Backend (Rust)
 │   └── src/

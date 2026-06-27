@@ -179,6 +179,29 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_study_items_review ON study_items(next_review);
             ",
         )?;
+
+        // Study log for tracking review history (streaks, stats)
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS study_log (
+                id          TEXT PRIMARY KEY,
+                item_id     TEXT NOT NULL,
+                quality     INTEGER NOT NULL,
+                reviewed_at TEXT NOT NULL,
+                FOREIGN KEY (item_id) REFERENCES study_items(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_study_log_date ON study_log(reviewed_at);
+            ",
+        )?;
+
+        // FTS5 full-text search for notes (RAG-style semantic search alternative)
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, content, content=notes, content_rowid='rowid');"
+        )?;
+        // Rebuild FTS index from existing notes
+        conn.execute_batch(
+            "INSERT INTO notes_fts(notes_fts) VALUES('rebuild');"
+        ).ok();
         Ok(())
     }
 
@@ -844,4 +867,124 @@ impl Database {
         })?.collect::<SqlResult<Vec<_>>>()?;
         Ok(items)
     }
+
+    pub fn log_study_review(&self, item_id: &str, quality: i32) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO study_log (id, item_id, quality, reviewed_at) VALUES (?1, ?2, ?3, ?4)",
+            params![id, item_id, quality, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_study_stats(&self) -> SqlResult<StudyStats> {
+        let conn = self.conn.lock().unwrap();
+        let today = chrono::Utc::now().date_naive().to_string();
+
+        let reviews_today: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM study_log WHERE reviewed_at LIKE ?1",
+            params![format!("{}%", today)],
+            |r| r.get(0),
+        )?;
+
+        let total_reviews: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM study_log", [], |r| r.get(0),
+        )?;
+
+        let due_count: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM study_items WHERE next_review <= ?1",
+            params![today],
+            |r| r.get(0),
+        )?;
+
+        // Last 7 days
+        let mut last_7 = Vec::new();
+        for d in 0..7 {
+            let day = (chrono::Utc::now().date_naive() - chrono::Duration::days(d)).to_string();
+            let count: i32 = conn.query_row(
+                "SELECT COUNT(*) FROM study_log WHERE reviewed_at LIKE ?1",
+                params![format!("{}%", day)],
+                |r| r.get(0),
+            )?;
+            last_7.push(DayCount { date: day, count });
+        }
+        last_7.reverse();
+
+        // Streak: walk backward from today, count consecutive days with reviews
+        let mut streak = 0;
+        for d in 0i64.. {
+            let day = (chrono::Utc::now().date_naive() - chrono::Duration::days(d)).to_string();
+            let c: i32 = conn.query_row(
+                "SELECT COUNT(*) FROM study_log WHERE reviewed_at LIKE ?1",
+                params![format!("{}%", day)],
+                |r| r.get(0),
+            )?;
+            if c > 0 { streak += 1; } else { break; }
+        }
+
+        Ok(StudyStats {
+            reviews_today,
+            streak_days: streak,
+            total_reviews,
+            due_count,
+            today_date: today,
+            last_7_days: last_7,
+        })
+    }
+
+    pub fn search_notes(&self, query: &str) -> SqlResult<Vec<SearchResult>> {
+        let conn = self.conn.lock().unwrap();
+        let clean = query.replace(|c: char| !c.is_alphanumeric() && c != ' ', " ").trim().to_string();
+        if clean.is_empty() { return Ok(vec![]); }
+
+        let terms: Vec<&str> = clean.split_whitespace().collect();
+        let fts_query = terms.iter()
+            .map(|t| format!("\"{}\"*", t.replace('"', "")))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+
+        let mut stmt = conn.prepare(
+            "SELECT n.id, n.title, snippet(notes_fts, 1, '<mark>', '</mark>', '…', 40),
+                   rank FROM notes_fts JOIN notes n ON n.rowid = notes_fts.rowid
+             WHERE notes_fts MATCH ?1 ORDER BY rank LIMIT 20"
+        )?;
+        let results = stmt.query_map(params![fts_query], |row| {
+            Ok(SearchResult {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                snippet: row.get(2)?,
+            })
+        })?.collect::<SqlResult<Vec<_>>>()?;
+        Ok(results)
+    }
+
+    pub fn rebuild_fts(&self) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("INSERT INTO notes_fts(notes_fts) VALUES('rebuild');").map_err(|e| e.into())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SearchResult {
+    pub id: String,
+    pub title: String,
+    pub snippet: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StudyStats {
+    pub reviews_today: i32,
+    pub streak_days: i32,
+    pub total_reviews: i32,
+    pub due_count: i32,
+    pub today_date: String,
+    pub last_7_days: Vec<DayCount>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DayCount {
+    pub date: String,
+    pub count: i32,
 }

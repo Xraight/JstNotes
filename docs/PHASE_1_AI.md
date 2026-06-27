@@ -39,12 +39,17 @@ User action
 | Command | Description |
 |---|---|
 | `generate_study_questions(note_id)` | AI or rule-based → saves `StudyItem[]` |
-| `get_due_reviews()` | Items with `next_review <= today` |
-| `rate_review(item_id, quality)` | Update SM-2: interval, ease_factor, repetitions |
+| `generate_elaboration_questions(note_id)` | Elaborative interrogation: "why/how" questions |
+| `generate_concrete_example(note_id)` | AI generates analogy/example for a concept |
+| `get_due_reviews()` | Items with `next_review <= today`, sorted by calendar priority |
+| `rate_review(item_id, quality)` | Update SM-2 + log to `study_log` |
+| `get_study_stats()` | Returns reviews today, streak, total, 7-day activity |
+| `search_notes(query)` | FTS5 full-text search across all notes |
+| `rebuild_fts()` | Rebuild FTS5 search index |
 | `generate_feynman_prompt(note_id)` | AI generates challenge question |
 | `evaluate_feynman(note_id, explanation)` | AI evaluates user's explanation |
 | `get_study_items(note_id)` | All study items for a note |
-| `test_ai_connection()` | Ping API with "Say OK" → verify auth + endpoint |
+| `test_ai_connection()` | Ping API → verify auth + endpoint |
 | `fetch_ai_models()` | GET /models → return available chat models |
 
 ### SM-2 Algorithm
@@ -95,9 +100,10 @@ Supported providers: Groq, OpenAI, OpenCode Go, Custom
 
 | Component | Purpose |
 |---|---|
-| `FlashCard.svelte` | Embedded in Editor. Q&A cards with next/prev, reveal, self-rate 1-5 |
-| `StudyPanel.svelte` | Right panel. Dashboard: due reviews, quiz mode, Feynman exercises |
+| `FlashCard.svelte` | Q&A cards with next/prev, reveal, self-rate 1-5. Used in Editor and StudyHome. |
+| `StudyHome.svelte` | Full-screen grid dashboard. Replaced old StudyPanel. Widgets: Stats, Quick Actions, Search, Quiz, Feynman/Examples, Cards. |
 | `Settings.svelte` (AI tab) | Provider cards, API key, Test Connection, dynamic model dropdown |
+| `Settings.svelte` (Tips tab) | Evidence-based learning technique explanations |
 
 ### Store: `aiStore`
 
@@ -107,6 +113,8 @@ Supported providers: Groq, OpenAI, OpenCode Go, Custom
 | `dueReviews` | All items due today |
 | `isGenerating` | Loading state |
 | `availableModels` | Populated by `fetchModels()` |
+| `stats` | Study statistics (reviews today, streak, total, 7-day) |
+| `searchResults` | FTS5 search results for Study Home |
 | `apiConfigured` | Derived: key exists + enabled |
 | `lastError` | Latest error message |
 

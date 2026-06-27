@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { StudyItem } from '../types';
+import type { StudyItem, StudyStats, SearchResult } from '../types';
 import { settingsStore } from './settings';
 
 class AIStore {
@@ -9,6 +9,22 @@ class AIStore {
   studyPanelOpen = $state(false);
   lastError = $state('');
   availableModels = $state<Array<{ id: string; name: string }>>([]);
+  stats = $state<StudyStats | null>(null);
+  searchResults = $state<SearchResult[]>([]);
+  searchQuery = $state('');
+  isSearching = $state(false);
+
+  async searchNotes(query: string) {
+    if (!query.trim()) { this.searchResults = []; return; }
+    this.isSearching = true;
+    try {
+      this.searchResults = await invoke<SearchResult[]>('search_notes', { query });
+    } catch {
+      this.searchResults = [];
+    } finally {
+      this.isSearching = false;
+    }
+  }
 
   get apiConfigured(): boolean {
     const s = settingsStore.settings;
@@ -22,6 +38,14 @@ class AIStore {
     } catch {
       this.availableModels = [];
       return 0;
+    }
+  }
+
+  async loadStats() {
+    try {
+      this.stats = await invoke<StudyStats>('get_study_stats');
+    } catch {
+      this.stats = null;
     }
   }
 
@@ -99,6 +123,7 @@ class AIStore {
     this.studyPanelOpen = !this.studyPanelOpen;
     if (this.studyPanelOpen) {
       this.loadDueReviews();
+      this.loadStats();
     }
   }
 }

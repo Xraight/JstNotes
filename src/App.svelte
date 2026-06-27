@@ -7,7 +7,7 @@
   import PdfViewer from './lib/components/PdfViewer.svelte';
   import Settings from './lib/components/Settings.svelte';
   import PdfLibrary from './lib/components/PdfLibrary.svelte';
-  import StudyPanel from './lib/components/StudyPanel.svelte';
+  import StudyHome from './lib/components/StudyHome.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
   import { pdfStore } from './lib/stores/pdf';
@@ -41,6 +41,13 @@
       pdfStore.loadLinkedPdfs(selectedNote.id);
     } else {
       pdfStore.linkedPdfIds = [];
+    }
+  });
+
+  // Close Study Home when PDF is opened (mutually exclusive views)
+  $effect(() => {
+    if (pdfStore.isOpen) {
+      aiStore.studyPanelOpen = false;
     }
   });
 
@@ -121,13 +128,15 @@
   </div>
   <div class="main">
     <Breadcrumbs items={breadcrumbs} />
+    {#if aiStore.studyPanelOpen}
+      <StudyHome />
+    {:else}
     <div class="editor-area" class:with-pdf={pdfStore.isOpen} bind:this={editorAreaRef}>
       <div class="editor-wrap">
         <Editor />
       </div>
       {#if pdfStore.isOpen}
-        <button
-          class="pdf-divider"
+        <button class="pdf-divider"
           onmousedown={startPdfResize}
           aria-label="Resize PDF panel"
           onkeydown={(e) => {
@@ -137,8 +146,8 @@
         </button>
       {/if}
       <PdfViewer pdfWidth={pdfWidth} />
-      <StudyPanel />
     </div>
+    {/if}
   </div>
   <div class="status-bar">
     <span class="status-left">

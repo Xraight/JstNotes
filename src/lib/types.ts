@@ -171,3 +171,23 @@ export interface StudyItem {
   source_page: number | null;
   days_until_event: number | null;
 }
+
+export interface StudyStats {
+  reviews_today: number;
+  streak_days: number;
+  total_reviews: number;
+  due_count: number;
+  today_date: string;
+  last_7_days: DayCount[];
+}
+
+export interface DayCount {
+  date: string;
+  count: number;
+}
+
+export interface SearchResult {
+  id: string;
+  title: string;
+  snippet: string;
+}

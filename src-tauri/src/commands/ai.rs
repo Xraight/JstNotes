@@ -455,7 +455,31 @@ pub fn rate_review(
         .ok_or("Study item not found")?;
     let (interval, ef, reps) = sm2(quality, item.interval_days, item.ease_factor, item.repetitions);
     let next = (chrono::Utc::now() + chrono::Duration::days(interval as i64)).date_naive().to_string();
-    storage.update_study_item_review(&item_id, interval, ef, reps, &next)
+    storage.update_study_item_review(&item_id, interval, ef, reps, &next)?;
+    storage.db.log_study_review(&item_id, quality).map_err(|e| format!("{}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_study_stats(
+    storage: State<'_, HybridStorage>,
+) -> Result<crate::storage::sqlite::StudyStats, String> {
+    storage.db.get_study_stats().map_err(|e| format!("{}", e))
+}
+
+#[tauri::command]
+pub fn search_notes(
+    query: String,
+    storage: State<'_, HybridStorage>,
+) -> Result<Vec<crate::storage::sqlite::SearchResult>, String> {
+    storage.db.search_notes(&query).map_err(|e| format!("{}", e))
+}
+
+#[tauri::command]
+pub fn rebuild_fts(
+    storage: State<'_, HybridStorage>,
+) -> Result<(), String> {
+    storage.db.rebuild_fts().map_err(|e| format!("{}", e))
 }
 
 #[tauri::command]
