@@ -41,6 +41,35 @@ class AIStore {
     }
   }
 
+  async generateElaboration(noteId: string) {
+    this.isGenerating = true;
+    this.lastError = '';
+    try {
+      const items = await invoke<StudyItem[]>('generate_elaboration_questions', { noteId });
+      this.studyItems = items;
+      await this.loadDueReviews();
+      return items;
+    } catch (e: any) {
+      this.lastError = e?.toString() || 'Generation failed';
+      return [];
+    } finally {
+      this.isGenerating = false;
+    }
+  }
+
+  async generateExample(noteId: string): Promise<string> {
+    this.isGenerating = true;
+    this.lastError = '';
+    try {
+      return await invoke<string>('generate_concrete_example', { noteId });
+    } catch (e: any) {
+      this.lastError = e?.toString() || 'Generation failed';
+      return '';
+    } finally {
+      this.isGenerating = false;
+    }
+  }
+
   async loadDueReviews() {
     try {
       this.dueReviews = await invoke<StudyItem[]>('get_due_reviews');

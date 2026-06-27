@@ -72,6 +72,8 @@ pub fn run() {
             commands::ai::test_ai_connection,
             commands::ai::fetch_ai_models,
             commands::ai::generate_study_questions,
+            commands::ai::generate_elaboration_questions,
+            commands::ai::generate_concrete_example,
             commands::ai::get_due_reviews,
             commands::ai::rate_review,
             commands::ai::generate_feynman_prompt,

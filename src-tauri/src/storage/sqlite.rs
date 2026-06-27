@@ -804,6 +804,7 @@ impl Database {
                 repetitions: row.get(8)?,
                 reviewed_at: row.get(9)?,
                 source_page: row.get(10)?,
+                days_until_event: None,
             })
         })?.collect::<SqlResult<Vec<_>>>()?;
         Ok(items)
@@ -838,6 +839,7 @@ impl Database {
                 repetitions: row.get(8)?,
                 reviewed_at: row.get(9)?,
                 source_page: row.get(10)?,
+                days_until_event: None,
             })
         })?.collect::<SqlResult<Vec<_>>>()?;
         Ok(items)

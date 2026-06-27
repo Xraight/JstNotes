@@ -251,7 +251,8 @@ pub async fn generate_study_questions(
             ease_factor: 2.5,
             repetitions: 0,
             reviewed_at: None,
-            source_page,
+            source_page: None,
+            days_until_event: None,
         });
     }
 
@@ -263,11 +264,184 @@ pub async fn generate_study_questions(
     Ok(items)
 }
 
+/**
+ * Generates "deep" questions using elaborative interrogation.
+ * Instead of simple recall ("What is X?"), these ask "Why does X lead to Y?",
+ * "How does X relate to Z?", forcing the learner to connect concepts.
+ * Uses the same cloud/fallback dual path as generate_study_questions.
+ */
+#[tauri::command]
+pub async fn generate_elaboration_questions(
+    note_id: String,
+    storage: State<'_, HybridStorage>,
+    settings_state: State<'_, crate::commands::settings::AppSettingsState>,
+) -> Result<Vec<StudyItem>, String> {
+    let config = {
+        let s = settings_state.settings.lock().map_err(|e| format!("{}", e))?;
+        load_config(&s)
+    };
+    let note = storage.get_note(&note_id)?.ok_or("Note not found")?;
+    let content = storage.get_note_content(&note_id)?.unwrap_or_default();
+    if content.is_empty() {
+        return Err("Note has no content".to_string());
+    }
+
+    let pdf_refs = storage.db.get_pdf_references_for_note(&note_id).map_err(|e| format!("{}", e))?;
+    let mut pdf_ctx = String::new();
+    if !pdf_refs.is_empty() {
+        pdf_ctx.push_str("Linked PDF pages: ");
+        for r in &pdf_refs { pdf_ctx.push_str(&format!("p.{} {}, ", r.page, r.label)); }
+    }
+
+    let questions: Vec<StudyQuestion>;
+    if !config.api_key.is_empty() && config.enabled {
+        let note_text: String = if content.len() > 2000 {
+            format!("{}… ({} chars total)", &content[..2000], content.len())
+        } else { content.clone() };
+
+        let system = "You are a study coach using elaborative interrogation. Generate questions that force the learner to explain WHY and HOW concepts relate — not just recall facts. Return ONLY a JSON array: [{\"question\": \"...\", \"answer\": \"...\"}]. Generate 3-5 questions. RESPOND IN THE SAME LANGUAGE AS THE NOTE.";
+        let user = format!("Note title: {}\n\nContent:\n{}\n{}\nGenerate 3-5 deep 'why/how' questions.", note.title, note_text, pdf_ctx);
+
+        let msgs = vec![
+            ChatMessage { role: "system".to_string(), content: system.to_string() },
+            ChatMessage { role: "user".to_string(), content: user },
+        ];
+        let resp = client::chat(msgs, &config, 1024).await?;
+        questions = {
+            let start = resp.find('[').unwrap_or(0);
+            let end = resp.rfind(']').unwrap_or(resp.len());
+            serde_json::from_str(&resp[start..=end]).map_err(|e| format!("Parse error: {}", e))?
+        };
+    } else {
+        // Rules-based deep questions: find sentences with cause/effect markers
+        let mut qs = Vec::new();
+        for sentence in content.split(&['.', '!', '?'][..]).map(|s| s.trim()).filter(|s| s.len() > 30 && s.len() < 400) {
+            let lower = sentence.to_lowercase();
+            if lower.contains("because") || lower.contains(" causes") || lower.contains(" leads to") || lower.contains(" since") || lower.contains(" therefore") || lower.contains(" thus") || lower.contains(" as a result") {
+                qs.push(StudyQuestion {
+                    question: format!("Why does this happen: \"{}\"", sentence),
+                    answer: sentence.to_string(),
+                });
+                if qs.len() >= 5 { break; }
+            }
+        }
+        if qs.is_empty() {
+            return Err("Could not extract cause/effect patterns. Try adding more explanatory content to the note.".to_string());
+        }
+        questions = qs;
+    }
+
+    let now = chrono::Utc::now();
+    let today = now.date_naive().to_string();
+    let source_page = pdf_refs.first().map(|r| r.page);
+    let mut items = Vec::new();
+    for q in &questions {
+        items.push(StudyItem {
+            id: uuid::Uuid::new_v4().to_string(),
+            note_id: note_id.clone(),
+            question: q.question.clone(),
+            answer: q.answer.clone(),
+            created_at: now.to_rfc3339(),
+            next_review: today.clone(),
+            interval_days: 1, ease_factor: 2.5, repetitions: 0,
+            reviewed_at: None,
+            days_until_event: None, source_page,
+        });
+    }
+    if items.is_empty() { return Err("No questions generated".to_string()); }
+    storage.save_study_items(&items)?;
+    Ok(items)
+}
+
+/**
+ * Generates a concrete example or analogy for a concept in the note.
+ * Uses the "concrete examples" learning strategy: abstract concepts become
+ * memorable through relatable analogies.
+ * Returns a single string (the example), not a StudyItem array like the
+ * other generators — this is a one-time reference, not a spaced repetition card.
+ */
+#[tauri::command]
+pub async fn generate_concrete_example(
+    note_id: String,
+    storage: State<'_, HybridStorage>,
+    settings_state: State<'_, crate::commands::settings::AppSettingsState>,
+) -> Result<String, String> {
+    let config = {
+        let s = settings_state.settings.lock().map_err(|e| format!("{}", e))?;
+        load_config(&s)
+    };
+    let note = storage.get_note(&note_id)?.ok_or("Note not found")?;
+    let content = storage.get_note_content(&note_id)?.unwrap_or_default();
+    if content.is_empty() { return Err("Note has no content".to_string()); }
+
+    let note_text: String = if content.len() > 1500 {
+        format!("{}…", &content[..1500])
+    } else { content.clone() };
+
+    if !config.api_key.is_empty() && config.enabled {
+        let msgs = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You are a study coach. Take an abstract concept from the note and explain it with a concrete, memorable analogy or real-world example. Keep it under 150 words. RESPOND IN THE SAME LANGUAGE AS THE NOTE.".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: format!("Note \"{}\":\n\n{}\n\nGenerate a concrete example or analogy for one key concept.", note.title, note_text),
+            },
+        ];
+        client::chat(msgs, &config, 256).await
+    } else {
+        // Fallback: find definitions/sentences that define something
+        for line in content.lines() {
+            let t = line.trim();
+            if t.len() > 30 && t.len() < 300 && (t.contains(" is ") || t.contains(" means ") || t.contains(" refers to ")) {
+                return Ok(format!("Think of it like this: imagine a real-world scenario where {} This is similar to how everyday situations work when you break them down to their core principles.", t[..80.min(t.len())].to_string()));
+            }
+        }
+        Err("No definable concepts found. Add more explanatory content to the note.".to_string())
+    }
+}
+
+/**
+ * Returns study items due for review, sorted by calendar priority.
+ * Items linked to notes with upcoming events (exams, deadlines) appear first.
+ * Within the same priority group, items are sorted by next_review date.
+ */
 #[tauri::command]
 pub fn get_due_reviews(
     storage: State<'_, HybridStorage>,
 ) -> Result<Vec<StudyItem>, String> {
-    storage.get_due_study_items()
+    let mut items = storage.get_due_study_items()?;
+    let today = chrono::Utc::now().date_naive();
+
+    for item in &mut items {
+        let events = storage.db.get_events_for_note(&item.note_id)
+            .map_err(|e| format!("{}", e))?;
+        if events.is_empty() { continue; }
+
+        let mut closest: Option<i32> = None;
+        for e in &events {
+            if e.completed { continue; }
+            if let Ok(ev_date) = chrono::NaiveDate::parse_from_str(&e.date, "%Y-%m-%d") {
+                let days = (ev_date - today).num_days() as i32;
+                if days >= 0 && (closest.is_none() || days < closest.unwrap()) {
+                    closest = Some(days);
+                }
+            }
+        }
+        item.days_until_event = closest;
+    }
+
+    items.sort_by(|a, b| {
+        match (a.days_until_event, b.days_until_event) {
+            (Some(da), Some(db)) => da.cmp(&db),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.next_review.cmp(&b.next_review),
+        }
+    });
+
+    Ok(items)
 }
 
 #[tauri::command]

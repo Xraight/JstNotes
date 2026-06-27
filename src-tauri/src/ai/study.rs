@@ -31,6 +31,9 @@ pub struct StudyItem {
     pub reviewed_at: Option<String>,
     /// Optional PDF page this question was generated from.
     pub source_page: Option<i32>,
+    /// Days until the nearest calendar event linked to this note.
+    /// Lower = higher priority. None = no linked events.
+    pub days_until_event: Option<i32>,
 }
 
 /// A question-answer pair before being saved as a StudyItem.

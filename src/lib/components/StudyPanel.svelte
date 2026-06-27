@@ -4,7 +4,7 @@
   import { noteStore } from '../stores/notes';
   import FlashCard from './FlashCard.svelte';
 
-  let tab = $state<'quiz' | 'cards' | 'feynman'>('quiz');
+  let tab = $state<'quiz' | 'cards' | 'feynman' | 'examples'>('quiz');
   let currentIdx = $state(0);
   let revealed = $state(false);
   let showFeynman = $state(false);
@@ -12,6 +12,21 @@
   let feynmanAnswer = $state('');
   let feynmanFeedback = $state('');
   let feynmanGenerating = $state(false);
+  let exampleResult = $state('');
+  let exampleGenerating = $state(false);
+
+  async function generateExample() {
+    if (!noteStore.selectedNote) return;
+    exampleGenerating = true;
+    exampleResult = '';
+    try {
+      exampleResult = await aiStore.generateExample(noteStore.selectedNote.id);
+    } catch {
+      exampleResult = 'Failed to generate example.';
+    } finally {
+      exampleGenerating = false;
+    }
+  }
 
   async function startFeynman() {
     if (!noteStore.selectedNote) return;
@@ -39,7 +54,30 @@
     }
   }
 
-  let quizItem = $derived(aiStore.dueReviews[currentIdx] ?? null);
+  // Round-robin interleaving: groups items by note, takes one from each in rotation
+  let quizList = $derived.by(() => {
+    const source = aiStore.dueReviews;
+    if (source.length < 2) return source;
+    const groups = new Map<string, typeof source>();
+    for (const item of source) {
+      const g = groups.get(item.note_id) || [];
+      g.push(item);
+      groups.set(item.note_id, g);
+    }
+    const keys = Array.from(groups.keys());
+    const result: typeof source = [];
+    let i = 0;
+    while (result.length < source.length) {
+      for (const key of keys) {
+        const g = groups.get(key)!;
+        if (i < g.length) result.push(g[i]);
+      }
+      i++;
+    }
+    return result;
+  });
+
+  let quizItem = $derived(quizList[currentIdx] ?? null);
 
   $effect(() => {
     if (aiStore.studyPanelOpen) {
@@ -58,6 +96,7 @@
     <button class="study-tab" class:active={tab === 'quiz'} onclick={() => tab = 'quiz'}>Quiz</button>
     <button class="study-tab" class:active={tab === 'cards'} onclick={() => tab = 'cards'}>Cards</button>
     <button class="study-tab" class:active={tab === 'feynman'} onclick={() => tab = 'feynman'}>Feynman</button>
+    <button class="study-tab" class:active={tab === 'examples'} onclick={() => tab = 'examples'}>Examples</button>
   </div>
 
   <div class="study-body">
@@ -67,13 +106,17 @@
         <span class="study-hint">Add Groq API key in Settings → AI</span>
       </div>
     {:else if tab === 'quiz'}
-      {#if aiStore.dueReviews.length > 0}
+      {#if quizList.length > 0}
         <div class="study-section">
-          <div class="study-section-header">Due for Review — {aiStore.dueReviews.length} items</div>
+          <div class="study-section-header">Due for Review — {quizList.length} items</div>
           <div class="quiz-card">
             <div class="quiz-progress">
-              <span class="quiz-counter">{currentIdx + 1} / {aiStore.dueReviews.length}</span>
-              <span class="quiz-note">from "{noteStore.notes.find(n => n.id === quizItem?.note_id)?.title || 'Note'}"</span>
+              <span class="quiz-counter">{currentIdx + 1} / {quizList.length}</span>
+              <span class="quiz-note">from "{noteStore.notes.find(n => n.id === quizItem?.note_id)?.title || 'Note'}"
+                {#if quizItem?.days_until_event != null && quizItem!.days_until_event! <= 7}
+                  <span class="cal-badge" title="Event in {quizItem!.days_until_event} days">📅 {quizItem!.days_until_event}d</span>
+                {/if}
+              </span>
             </div>
             <div class="quiz-question">{quizItem?.question}</div>
             {#if revealed}
@@ -93,7 +136,7 @@
                     onclick={async () => {
                       if (quizItem) await aiStore.rateReview(quizItem.id, q);
                       revealed = false;
-                      if (currentIdx >= aiStore.dueReviews.length - 1) currentIdx = 0;
+                      if (currentIdx >= quizList.length - 1) currentIdx = 0;
                       else currentIdx++;
                     }}>{q}</button>
                 {/each}
@@ -130,6 +173,20 @@
           {#if feynmanFeedback}
             <div class="feynman-feedback">{feynmanFeedback}</div>
           {/if}
+        {/if}
+      </div>
+    {:else if tab === 'examples'}
+      <div class="study-section">
+        <div class="study-section-header">Concrete Examples</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0">
+          Generates a relatable analogy or real-world example for a concept in your note.
+        </p>
+        <button class="study-btn" onclick={generateExample}
+          disabled={!noteStore.selectedNote || exampleGenerating || !aiStore.apiConfigured}>
+          {exampleGenerating ? '…' : 'Generate Example'}
+        </button>
+        {#if exampleResult}
+          <div class="feynman-feedback">{exampleResult}</div>
         {/if}
       </div>
     {/if}
@@ -176,6 +233,8 @@
   .quiz-counter { font-size: 11px; color: var(--text-secondary); }
   .quiz-note { font-size: 11px; color: var(--text-secondary); font-style: italic;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+  .cal-badge { font-style: normal; background: var(--highlight); color: #fff;
+    font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 6px; }
   .quiz-question { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.5; }
   .quiz-divider { margin: 12px 0; border-top: 1px solid var(--border); }
   .quiz-answer { font-size: 13px; color: var(--text-primary); line-height: 1.5; }

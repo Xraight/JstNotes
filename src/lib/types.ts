@@ -169,4 +169,5 @@ export interface StudyItem {
   repetitions: number;
   reviewed_at: string | null;
   source_page: number | null;
+  days_until_event: number | null;
 }

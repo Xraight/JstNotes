@@ -8,7 +8,7 @@
   let { onclose }: { onclose: () => void } = $props();
 
   let s = $derived(settingsStore.settings);
-  let activeTab = $state<'presets' | 'colors' | 'typography' | 'layout' | 'css' | 'ai'>('presets');
+  let activeTab = $state<'presets' | 'colors' | 'typography' | 'layout' | 'css' | 'ai' | 'tips'>('presets');
 
   let tempColors = $state<ColorSettings>({ bg_primary: '', bg_secondary: '', accent: '', highlight: '', text_primary: '', text_secondary: '', border: '' });
   let tempTypo = $state<TypographySettings>({ font_family: '', font_family_mono: '', font_size: 15, line_height: 1.7 });
@@ -205,6 +205,9 @@
       </button>
       <button class="tab" class:active={activeTab === 'ai'} onclick={() => activeTab = 'ai'}>
         AI
+      </button>
+      <button class="tab" class:active={activeTab === 'tips'} onclick={() => activeTab = 'tips'}>
+        Tips
       </button>
     </div>
 
@@ -427,6 +430,61 @@
 
           <p class="hint" style="margin-top:12px">
             Notes are sent to the configured API endpoint.
+          </p>
+        </div>
+      {/if}
+
+      {#if activeTab === 'tips'}
+        <div class="section">
+          <h3>Study Techniques</h3>
+          <p class="hint">Evidence-based learning methods available in the Study panel.</p>
+
+          <div class="tip-card">
+            <div class="tip-icon">📝</div>
+            <div class="tip-body">
+              <strong>Flashcards (Generate)</strong>
+              <p>Active recall Q&A cards generated from your notes. Best for factual knowledge. Cards use spaced repetition (SM-2): the more you recall correctly, the longer the interval until next review.</p>
+            </div>
+          </div>
+
+          <div class="tip-card">
+            <div class="tip-icon">🔍</div>
+            <div class="tip-body">
+              <strong>Deep Questions</strong>
+              <p>Elaborative interrogation: "why" and "how" questions that connect concepts instead of just recalling facts. Forces deeper thinking. Uses SM-2 spaced repetition.</p>
+            </div>
+          </div>
+
+          <div class="tip-card">
+            <div class="tip-icon">🧠</div>
+            <div class="tip-body">
+              <strong>Feynman Technique</strong>
+              <p>The AI challenges you to explain a concept in your own words, then evaluates your explanation. One-time exercise — no spaced repetition. Best for testing true understanding.</p>
+            </div>
+          </div>
+
+          <div class="tip-card">
+            <div class="tip-icon">💡</div>
+            <div class="tip-body">
+              <strong>Concrete Examples</strong>
+              <p>Generates relatable analogies or real-world examples for abstract concepts in your notes. Makes complex ideas memorable through familiar comparisons.</p>
+            </div>
+          </div>
+
+          <div class="tip-card">
+            <div class="tip-icon">📊</div>
+            <div class="tip-body">
+              <strong>Quiz Dashboard</strong>
+              <p>Daily review of items due via SM-2 spaced repetition. Rate your recall 1-5. Topics are automatically interleaved (mixed). Questions linked to notes with upcoming calendar events (exams, deadlines) are prioritized and shown with a 📅 badge.</p>
+            </div>
+          </div>
+
+          <h3 style="margin-top:20px">How SM-2 works</h3>
+          <p class="hint">
+            After each review, rate your recall from 1 (forgot) to 5 (perfect). The algorithm adjusts the review schedule:<br/>
+            <strong>1-2:</strong> Reset — review again tomorrow.<br/>
+            <strong>3:</strong> Review in 1-6 days.<br/>
+            <strong>4-5:</strong> Interval grows exponentially. You'll see the card again in days, weeks, then months.
           </p>
         </div>
       {/if}
@@ -807,4 +865,10 @@
     cursor: pointer; padding: 4px 0; user-select: none;
   }
   .advanced-toggle:hover { color: var(--text-primary); }
+  .tip-card { display: flex; gap: 12px; padding: 12px;
+    background: var(--bg-primary); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 10px; }
+  .tip-icon { font-size: 20px; flex-shrink: 0; width: 28px; text-align: center; }
+  .tip-body strong { font-size: 13px; color: var(--text-primary); }
+  .tip-body p { font-size: 12px; color: var(--text-secondary); margin: 4px 0 0; line-height: 1.5; }
 </style>

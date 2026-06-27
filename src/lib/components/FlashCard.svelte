@@ -19,21 +19,26 @@
 
   function toggleReveal() { revealed = !revealed; }
 
-  async function generate() {
+async function generate() {
     if (!note) return;
     revealed = false;
     info = 'Generating…';
     try {
       const result = await aiStore.generateQuestions(note.id);
-      if (result.length > 0) {
-        currentIdx = 0;
-        info = '';
-      } else {
-        info = aiStore.lastError || 'No questions generated';
-      }
-    } catch (e: any) {
-      info = e?.message || e?.toString() || 'Unknown error';
-    }
+      if (result.length > 0) { currentIdx = 0; info = ''; }
+      else { info = aiStore.lastError || 'No questions generated'; }
+    } catch (e: any) { info = e?.message || 'Error'; }
+  }
+
+  async function generateDeep() {
+    if (!note) return;
+    revealed = false;
+    info = 'Generating deep questions…';
+    try {
+      const result = await aiStore.generateElaboration(note.id);
+      if (result.length > 0) { currentIdx = 0; info = ''; }
+      else { info = aiStore.lastError || 'No questions generated'; }
+    } catch (e: any) { info = e?.message || 'Error'; }
   }
 
   async function handleRate(quality: number) {
@@ -59,6 +64,9 @@
     <span class="fc-title">Flashcards</span>
     <button class="fc-btn" onclick={generate} disabled={aiStore.isGenerating}>
       {aiStore.isGenerating ? '…' : 'Generate'}
+    </button>
+    <button class="fc-btn" onclick={generateDeep} disabled={aiStore.isGenerating}>
+      {aiStore.isGenerating ? '…' : 'Deep'}
     </button>
   </div>
 
