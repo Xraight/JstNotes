@@ -193,15 +193,6 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_study_log_date ON study_log(reviewed_at);
             ",
         )?;
-
-        // FTS5 full-text search for notes (RAG-style semantic search alternative)
-        conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, content, content=notes, content_rowid='rowid');"
-        )?;
-        // Rebuild FTS index from existing notes
-        conn.execute_batch(
-            "INSERT INTO notes_fts(notes_fts) VALUES('rebuild');"
-        ).ok();
         Ok(())
     }
 
@@ -932,37 +923,6 @@ impl Database {
             today_date: today,
             last_7_days: last_7,
         })
-    }
-
-    pub fn search_notes(&self, query: &str) -> SqlResult<Vec<SearchResult>> {
-        let conn = self.conn.lock().unwrap();
-        let clean = query.replace(|c: char| !c.is_alphanumeric() && c != ' ', " ").trim().to_string();
-        if clean.is_empty() { return Ok(vec![]); }
-
-        let terms: Vec<&str> = clean.split_whitespace().collect();
-        let fts_query = terms.iter()
-            .map(|t| format!("\"{}\"*", t.replace('"', "")))
-            .collect::<Vec<_>>()
-            .join(" OR ");
-
-        let mut stmt = conn.prepare(
-            "SELECT n.id, n.title, snippet(notes_fts, 1, '<mark>', '</mark>', '…', 40),
-                   rank FROM notes_fts JOIN notes n ON n.rowid = notes_fts.rowid
-             WHERE notes_fts MATCH ?1 ORDER BY rank LIMIT 20"
-        )?;
-        let results = stmt.query_map(params![fts_query], |row| {
-            Ok(SearchResult {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                snippet: row.get(2)?,
-            })
-        })?.collect::<SqlResult<Vec<_>>>()?;
-        Ok(results)
-    }
-
-    pub fn rebuild_fts(&self) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute_batch("INSERT INTO notes_fts(notes_fts) VALUES('rebuild');").map_err(|e| e.into())
     }
 }
 

@@ -467,19 +467,67 @@ pub fn get_study_stats(
     storage.db.get_study_stats().map_err(|e| format!("{}", e))
 }
 
+/**
+ * Searches all notes by title and content using direct substring matching.
+ * Returns up to 20 results with surrounding context as snippet.
+ * Note content is read from Markdown files via HybridStorage.
+ */
 #[tauri::command]
 pub fn search_notes(
     query: String,
     storage: State<'_, HybridStorage>,
 ) -> Result<Vec<crate::storage::sqlite::SearchResult>, String> {
-    storage.db.search_notes(&query).map_err(|e| format!("{}", e))
+    let q = query.trim().to_lowercase();
+    if q.is_empty() { return Ok(vec![]); }
+
+    let notes = storage.list_notes().map_err(|e| format!("{}", e))?;
+    let terms: Vec<&str> = q.split_whitespace().collect();
+    let mut results = Vec::new();
+
+    for note in &notes {
+        let title_lower = note.title.to_lowercase();
+        let content = storage.get_note_content(&note.id)?.unwrap_or_default();
+        let content_lower = content.to_lowercase();
+
+        let title_match = terms.iter().any(|t| title_lower.contains(t));
+        let content_match = terms.iter().any(|t| content_lower.contains(t));
+
+        if !title_match && !content_match { continue; }
+
+        let snippet = if content_match {
+            let first_term = terms.iter().find_map(|t| content_lower.find(t)).unwrap_or(0);
+            let start = if first_term > 30 { first_term - 30 } else { 0 };
+            let end = (first_term + 80).min(content.len());
+            let snip = &content[start..end];
+            let mut snip = snip.replace('\n', " ").trim().to_string();
+            for t in &terms {
+                let t_lower = t.to_lowercase();
+                if let Some(pos) = snip.to_lowercase().find(&t_lower) {
+                    let original = &snip[pos..pos + t.len()];
+                    snip = snip.replace(original, &format!("<mark>{}</mark>", original));
+                }
+            }
+            if start > 0 { format!("…{}", snip) } else { snip }
+        } else {
+            note.title.clone()
+        };
+
+        results.push(crate::storage::sqlite::SearchResult {
+            id: note.id.clone(),
+            title: note.title.clone(),
+            snippet,
+        });
+
+        if results.len() >= 20 { break; }
+    }
+
+    Ok(results)
 }
 
+/// No-op kept for backwards compatibility. Search is now direct substring matching.
 #[tauri::command]
-pub fn rebuild_fts(
-    storage: State<'_, HybridStorage>,
-) -> Result<(), String> {
-    storage.db.rebuild_fts().map_err(|e| format!("{}", e))
+pub fn rebuild_fts() -> Result<(), String> {
+    Ok(())
 }
 
 #[tauri::command]
