@@ -8,6 +8,7 @@
   import Settings from './lib/components/Settings.svelte';
   import PdfLibrary from './lib/components/PdfLibrary.svelte';
   import StudyHome from './lib/components/StudyHome.svelte';
+  import GraphView from './lib/components/GraphView.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
   import { pdfStore } from './lib/stores/pdf';
@@ -48,6 +49,7 @@
   $effect(() => {
     if (pdfStore.isOpen) {
       aiStore.studyPanelOpen = false;
+      aiStore.graphOpen = false;
     }
   });
 
@@ -130,6 +132,8 @@
     <Breadcrumbs items={breadcrumbs} />
     {#if aiStore.studyPanelOpen}
       <StudyHome />
+    {:else if aiStore.graphOpen}
+      <GraphView />
     {:else}
     <div class="editor-area" class:with-pdf={pdfStore.isOpen} bind:this={editorAreaRef}>
       <div class="editor-wrap">

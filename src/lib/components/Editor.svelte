@@ -290,6 +290,9 @@
       <button class="view-toggle" onclick={() => aiStore.togglePanel()} title="Study Dashboard">
         📚 Study
       </button>
+      <button class="view-toggle" onclick={() => aiStore.toggleGraph()} title="Graph View">
+        📊 Graph
+      </button>
       <span class="toolbar-hint">
         LaTeX: <code>$$...$$</code> / <code>$...$</code> &nbsp;|&nbsp; Mention: <code>@Título</code>
       </span>

@@ -7,6 +7,7 @@ class AIStore {
   dueReviews = $state<StudyItem[]>([]);
   isGenerating = $state(false);
   studyPanelOpen = $state(false);
+  graphOpen = $state(false);
   lastError = $state('');
   availableModels = $state<Array<{ id: string; name: string }>>([]);
   stats = $state<StudyStats | null>(null);
@@ -121,10 +122,16 @@ class AIStore {
 
   togglePanel() {
     this.studyPanelOpen = !this.studyPanelOpen;
+    this.graphOpen = false;
     if (this.studyPanelOpen) {
       this.loadDueReviews();
       this.loadStats();
     }
+  }
+
+  toggleGraph() {
+    this.graphOpen = !this.graphOpen;
+    this.studyPanelOpen = false;
   }
 }
 

@@ -82,6 +82,7 @@ pub fn run() {
             commands::ai::generate_feynman_prompt,
             commands::ai::evaluate_feynman,
             commands::ai::get_study_items,
+            commands::graph::get_graph_data,
             commands::pdf::list_pdfs,
             commands::pdf::import_pdf,
             commands::pdf::get_pdf_text,
