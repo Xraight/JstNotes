@@ -11,6 +11,8 @@ class PdfStore {
   isOpen = $state(false);
   linkedPdfIds = $state<string[]>([]);
   targetPage = $state<number | null>(null);
+  pdfOutline = $state<Array<{ title: string; page: number; depth: number }>>([]);
+  showOutline = $state(false);
 
   async loadPdfs() {
     try {
@@ -59,6 +61,8 @@ class PdfStore {
     this.pdfData = null;
     this.isOpen = false;
     this.targetPage = null;
+    this.showOutline = false;
+    this.pdfOutline = [];
   }
 
   async openPdfAtPage(meta: PdfMetadata, page: number) {

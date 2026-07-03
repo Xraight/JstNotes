@@ -47,20 +47,24 @@ JSTNotes is a hybrid desktop app. The Tauri webview (Svelte 5) communicates with
 ### Component Tree
 
 ```
-App.svelte (Editor ↔ StudyHome toggle)
+App.svelte (Editor ↔ StudyHome ↔ GraphView toggle)
 ├── Sidebar
-│   ├── NoteTree.svelte → TreeItem.svelte (recursive)
+│   ├── NoteTree.svelte → TreeItem.svelte (recursive, drag-and-drop)
 │   ├── Calendar.svelte
 │   └── PdfLibrary.svelte
 ├── Main
 │   ├── Breadcrumbs.svelte
 │   ├── Editor.svelte
-│   │   └── FlashCard.svelte
-│   ├── PdfViewer.svelte
-│   └── StudyHome.svelte (full-screen grid dashboard)
-│       └── FlashCard.svelte (reused as widget)
+│   │   └── FlashCard.svelte (reused as widget)
+│   ├── PdfViewer.svelte (color picker, outline extraction)
+│   ├── StudyHome.svelte (full-screen grid dashboard)
+│   │   └── FlashCard.svelte (reused as widget)
+│   ├── GraphView.svelte (D3 force graph)
+│   └── Context Panel (right side)
+│       ├── MiniConceptMap.svelte (Dual Coding, technique 6/6)
+│       └── PDF Outline (navigable ToC)
 ├── StatusBar
-└── Settings.svelte (modal, Tips tab)
+└── Settings.svelte (modal, AI tab, Tips tab)
 ```
 
 ### Stores (Svelte 5 Runes)
@@ -70,8 +74,8 @@ App.svelte (Editor ↔ StudyHome toggle)
 | `noteStore` | `stores/notes.svelte.ts` | Note CRUD, tree, selection, breadcrumbs |
 | `settingsStore` | `stores/settings.svelte.ts` | Theme, colors, typography, layout, AI config, CSS |
 | `calendarStore` | `stores/calendar.svelte.ts` | Calendar events, note linking |
-| `pdfStore` | `stores/pdf.svelte.ts` | PDF import/list, annotations, references, linking |
-| `aiStore` | `stores/ai.svelte.ts` | Study items, flashcards, model management |
+| `pdfStore` | `stores/pdf.svelte.ts` | PDF import/list, annotations, references, linking, outline |
+| `aiStore` | `stores/ai.svelte.ts` | Study items, flashcards, stats, search, graph toggle |
 
 ### Key Design Decisions
 
@@ -92,8 +96,9 @@ src-tauri/src/
 ├── commands/
 │   ├── notes.rs      — create, get, update, delete, list, tree, breadcrumbs
 │   ├── pdf.rs        — import, annotations, references, linking, delete
-│   ├── ai.rs         — study questions, reviews, Feynman, model fetch
+│   ├── ai.rs         — study questions, reviews, Feynman, streaming, search
 │   ├── calendar.rs   — events, note linking
+│   ├── graph.rs      — get_graph_data (nodes + links)
 │   └── settings.rs   — get/save settings
 ├── storage/
 │   ├── sqlite.rs     — Database impl (20+ tables, 40+ methods)
@@ -127,13 +132,15 @@ src-tauri/src/
 | `note_embeddings` | Embedding vectors for future RAG |
 | `notes_fts` | FTS5 full-text search index |
 
-### IPC Commands (42 total)
+### IPC Commands (44 total)
 
 **Notes (8):** `create_note`, `get_note`, `update_note`, `delete_note`, `list_notes`, `get_children`, `get_breadcrumbs`, `build_tree`
 
 **PDF (14):** `list_pdfs`, `import_pdf`, `get_pdf_text`, `save_annotation`, `get_annotations`, `delete_annotation`, `update_annotation_content`, `get_pdfs_for_note`, `link_pdf_to_note`, `unlink_pdf_from_note`, `delete_pdf`, `get_linked_pdf_ids`, `create_pdf_reference`, `get_pdf_references_for_note`, `delete_pdf_reference`
 
-**AI (14):** `generate_study_questions`, `generate_elaboration_questions`, `generate_concrete_example`, `get_due_reviews`, `rate_review`, `get_study_stats`, `search_notes`, `rebuild_fts`, `generate_feynman_prompt`, `evaluate_feynman`, `get_study_items`, `fetch_ai_models`, `test_ai_connection`
+**AI (15):** `generate_study_questions`, `generate_elaboration_questions`, `generate_concrete_example`, `get_due_reviews`, `rate_review`, `get_study_stats`, `search_notes`, `rebuild_fts`, `generate_feynman_prompt`, `evaluate_feynman`, `evaluate_feynman_stream`, `get_study_items`, `fetch_ai_models`, `test_ai_connection`
+
+**Graph (1):** `get_graph_data`
 
 **Settings (2):** `get_settings`, `save_settings`
 
@@ -209,3 +216,32 @@ src-tauri/src/
 1. `get_study_stats` queries `study_log` for reviews today, streak, total, 7-day activity
 2. Streak algorithm: walk backward from today, count consecutive days with ≥1 review
 3. Displayed in Stats widget and Stats tab
+
+### Streaming AI (Feynman)
+1. User submits explanation → `invoke('evaluate_feynman_stream')`
+2. Rust opens SSE connection to API with `stream: true`
+3. Emits Tauri events: `ai-chunk` per token delta, `ai-done` when complete
+4. Frontend listens and appends text incrementally
+
+### Note Search (direct substring)
+1. User types in Search widget → debounced 250ms
+2. `search_notes(query)` iterates all notes via HybridStorage, reads markdown content
+3. Case-insensitive substring matching on title + content
+4. Returns up to 20 results with `<mark>` highlighted snippet
+
+### Graph View
+1. `get_graph_data()` collects nodes (all notes) + links (parent, @-mention, PDF reference)
+2. Frontend renders D3.js force simulation on SVG
+3. Click node → opens note. Drag node. Zoom/pan.
+
+### Context Panel (Concept Map + Outline)
+1. Shows right side of editor when a note is selected (240px-320px responsive)
+2. No PDF: shows Concept Map (per-note mini-graph via D3)
+3. PDF open + ☰ toggle: shows PDF Outline (extracted via `pdfDoc.getOutline()` + `getPageIndex()`)
+4. Outline click → `scrollIntoView` to page
+
+### Drag-and-drop note reorganization
+1. mousedown on tree item → saves dragged note ID in module-level state
+2. mouseover on another item → visual highlight (`.drag-target` class)
+3. mouseup on target → calls `noteStore.updateNote({ id, parent_id: targetId })`
+4. Ghost preview follows cursor during drag

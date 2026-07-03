@@ -11,6 +11,7 @@
    * the editor area. Opening a PDF auto-closes Study Home.
    */
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import { aiStore } from '../stores/ai';
   import { noteStore } from '../stores/notes';
   import FlashCard from './FlashCard.svelte';
@@ -71,12 +72,24 @@
 
   async function submitFeynman() {
     if (!noteStore.selectedNote || !feynmanAnswer.trim()) return;
+    feynmanFeedback = '';
     feynmanGen = true;
     try {
-      feynmanFeedback = await invoke('evaluate_feynman', { noteId: noteStore.selectedNote!.id, userExplanation: feynmanAnswer });
-    } catch {
-      feynmanFeedback = 'Failed to get AI feedback.';
-    } finally { feynmanGen = false; }
+      const unlisten = await listen<string>('ai-chunk', (ev) => {
+        feynmanFeedback += ev.payload;
+      });
+      await listen('ai-done', () => {
+        unlisten();
+        feynmanGen = false;
+      });
+      await invoke('evaluate_feynman_stream', {
+        noteId: noteStore.selectedNote!.id,
+        userExplanation: feynmanAnswer,
+      });
+    } catch (e: any) {
+      feynmanFeedback = e?.toString() || 'Failed';
+      feynmanGen = false;
+    }
   }
 
   // --- Examples ---

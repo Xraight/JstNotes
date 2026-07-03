@@ -3,6 +3,7 @@
   import { calendarStore } from '../stores/calendar';
   import { pdfStore } from '../stores/pdf';
   import { aiStore } from '../stores/ai';
+  import { tick } from 'svelte';
   import { Marked } from 'marked';
   import katex from 'katex';
   import 'katex/dist/katex.min.css';
@@ -23,7 +24,9 @@
   let allUpcomingEvents = $state<import('../types').CalendarEvent[]>([]);
   let pdfRefs = $state<import('../types').PdfReference[]>([]);
   let mentionFiltered = $derived(
-    noteTitles.filter(t => t.toLowerCase().includes(mentionQuery.toLowerCase()))
+    noteStore.notes
+      .filter(n => !mentionQuery || n.title.toLowerCase().includes(mentionQuery.toLowerCase()))
+      .slice(0, 10)
   );
 
   const marked = new Marked({ breaks: true, gfm: true });
@@ -148,9 +151,9 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (mentionOpen) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); mentionIdx = (mentionIdx + 1) % mentionFiltered.length; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); mentionIdx = (mentionIdx - 1 + mentionFiltered.length) % mentionFiltered.length; }
+    if (mentionOpen && mentionFiltered.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); mentionIdx = (mentionIdx + 1) % mentionFiltered.length; tick().then(scrollMentionIntoView); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); mentionIdx = (mentionIdx - 1 + mentionFiltered.length) % mentionFiltered.length; tick().then(scrollMentionIntoView); }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         insertMention();
@@ -165,6 +168,17 @@
     if (e.key === '@') {
       setTimeout(() => checkMentionTrigger(), 0);
     }
+  }
+
+  function getMentionPos() {
+    if (!textareaEl) return { x: 0, y: 0 };
+    const rect = textareaEl.getBoundingClientRect();
+    const text = content.slice(0, textareaEl.selectionStart);
+    const lines = text.split('\n');
+    const lineCount = lines.length;
+    // Estimate line height from font size
+    const lineH = 20;
+    return { left: rect.left + 8, top: rect.top + Math.min(lineCount * lineH, rect.height - 200) };
   }
 
   function handleInput(e: Event) {
@@ -184,7 +198,7 @@
     const query = text.slice(atIdx + 1);
     mentionQuery = query;
     mentionIdx = 0;
-    mentionOpen = query.length > 0;
+    mentionOpen = true; // Show immediately, even with empty query
   }
 
   function insertMention() {
@@ -195,14 +209,21 @@
     const atIdx = textBefore.lastIndexOf('@');
     const before = content.slice(0, atIdx);
     const after = content.slice(pos);
-    content = `${before}@${selected} ${after}`;
+    content = `${before}@${selected.title} ${after}`;
     mentionOpen = false;
     scheduleSave();
     requestAnimationFrame(() => {
       textareaEl!.focus();
-      const newPos = before.length + selected.length + 2;
+      const newPos = before.length + selected.title.length + 2;
       textareaEl!.setSelectionRange(newPos, newPos);
     });
+  }
+
+  function scrollMentionIntoView() {
+    const dropdown = document.querySelector('.mention-dropdown');
+    if (!dropdown) return;
+    const active = dropdown.querySelector('.mention-item.active') as HTMLElement | null;
+    if (active) active.scrollIntoView({ block: 'nearest' });
   }
 
   type FormatAction = {
@@ -384,14 +405,18 @@
             onkeydown={handleKeydown}
             placeholder="Write in Markdown... (use @ para mencionar notas, $...$ para LaTeX)"
           ></textarea>
-          {#if mentionOpen && mentionFiltered.length > 0}
-            <div class="mention-dropdown">
-              {#each mentionFiltered as t, i}
+          {#if mentionOpen}
+            <div class="mention-dropdown" style="left: {getMentionPos().left}px; top: {getMentionPos().top}px;">
+              {#each mentionFiltered as n, i}
                 <button class="mention-item" class:active={i === mentionIdx}
                   onmousedown={(e) => { e.preventDefault(); mentionIdx = i; insertMention(); }}>
-                  @{t}
+                  <span class="mention-title">@{n.title}</span>
+                  <span class="mention-path">{n.path.replace(/^notes\//, '').split('/').filter(s => s.length > 30).join(' / ') || 'root'}</span>
                 </button>
               {/each}
+              {#if mentionFiltered.length === 0 && mentionQuery}
+                <div class="mention-item mention-no-results">No matching notes</div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -648,32 +673,30 @@
     color: var(--text-secondary);
   }
   .mention-dropdown {
-    position: absolute;
-    left: 20px;
-    bottom: 100%;
+    position: fixed;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-    max-height: 180px;
+    max-height: 200px;
     overflow-y: auto;
-    min-width: 180px;
-    z-index: 100;
+    min-width: 200px;
+    z-index: 999;
   }
   .mention-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    padding: 6px 14px;
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    font-size: 13px;
-    cursor: pointer;
+    display: flex; flex-direction: column; gap: 1px;
+    width: 100%; text-align: left; padding: 6px 14px;
+    background: none; border: none; cursor: pointer; font-family: inherit;
   }
+  .mention-title { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .mention-path { font-size: 10px; color: var(--text-secondary); opacity: 0.7; }
   .mention-item.active,
   .mention-item:hover {
     background: var(--accent);
+  }
+  .mention-no-results {
+    color: var(--text-secondary); font-style: italic; cursor: default;
+    pointer-events: none;
   }
   .preview {
     flex: 1;

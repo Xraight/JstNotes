@@ -9,6 +9,7 @@
   import PdfLibrary from './lib/components/PdfLibrary.svelte';
   import StudyHome from './lib/components/StudyHome.svelte';
   import GraphView from './lib/components/GraphView.svelte';
+  import MiniConceptMap from './lib/components/MiniConceptMap.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
   import { pdfStore } from './lib/stores/pdf';
@@ -150,6 +151,32 @@
         </button>
       {/if}
       <PdfViewer pdfWidth={pdfWidth} />
+      {#if selectedNote}
+        <div class="context-panel">
+          {#if pdfStore.isOpen && pdfStore.showOutline && pdfStore.pdfOutline.length > 0}
+            <div class="outline-view">
+              <div class="outline-view-header">
+                Outline
+                <button class="outline-close" onclick={() => pdfStore.showOutline = false}>✕</button>
+              </div>
+              <div class="outline-view-body">
+                {#each pdfStore.pdfOutline as item}
+                  <button class="outline-view-item" style="padding-left: {item.depth * 14 + 12}px"
+                    onclick={() => {
+                      const el = document.querySelector(`[data-page="${item.page + 1}"]`) as HTMLElement | null;
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}>
+                    {item.title}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <div class="context-fill">
+            <MiniConceptMap context={pdfStore.isOpen} compact={pdfStore.isOpen} />
+          </div>
+        </div>
+      {/if}
     </div>
     {/if}
   </div>
@@ -270,6 +297,40 @@
     flex-direction: column;
     min-width: 0;
   }
+  .context-panel {
+    width: clamp(200px, 20%, 320px); flex-shrink: 0;
+    display: flex; flex-direction: column;
+    border-left: 1px solid var(--border);
+    background: var(--bg-primary); overflow: hidden;
+  }
+  .outline-view {
+    display: flex; flex-direction: column; height: 100%;
+  }
+  .outline-view-header {
+    padding: 8px 12px; font-size: 11px; font-weight: 600;
+    color: var(--text-secondary); text-transform: uppercase;
+    letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .outline-close {
+    background: none; border: none; cursor: pointer;
+    font-size: 13px; color: var(--text-secondary); font-family: inherit;
+    padding: 2px 4px; border-radius: 2px;
+  }
+  .outline-close:hover { background: var(--accent); color: var(--text-primary); }
+  .outline-view-body {
+    flex: 1; overflow-y: auto; padding: 4px 0;
+  }
+  .outline-view-item {
+    display: block; width: 100%; text-align: left;
+    background: none; border: none; cursor: pointer;
+    font-size: 12px; color: var(--text-primary); font-family: inherit;
+    padding: 3px 12px; line-height: 1.6;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .outline-view-item:hover { background: var(--accent); }
+  .context-fill { flex: 1; overflow: hidden; min-height: 0; }
   .status-bar {
     display: flex;
     align-items: center;

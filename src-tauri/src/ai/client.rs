@@ -151,6 +151,80 @@ let val: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
     Ok(content)
 }
 
+/// Streams a chat completion via Server-Sent Events (SSE).
+/// Parses `data: ` lines from the event stream, extracting `choices[0].delta.content`.
+/// Calls `on_chunk` for each text delta, returns the full concatenated response.
+/// Used by `evaluate_feynman_stream` to emit `ai-chunk` Tauri events.
+pub async fn stream_chat(
+    messages: Vec<ChatMessage>,
+    config: &AiConfig,
+    max_tokens: u32,
+    mut on_chunk: impl FnMut(&str),
+) -> Result<String, String> {
+    let client = Client::new();
+
+    let endpoint = if config.endpoint.is_empty() {
+        DEFAULT_GROQ_ENDPOINT.to_string()
+    } else {
+        config.endpoint.clone()
+    };
+
+    let model = if config.model.is_empty() {
+        DEFAULT_GROQ_MODEL.to_string()
+    } else {
+        config.model.clone()
+    };
+
+    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+
+    let req = ChatRequest {
+        model, messages, temperature: 0.7, max_tokens, stream: true,
+    };
+
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.api_key))
+        .header("x-api-key", &config.api_key)
+        .json(&req)
+        .send()
+        .await
+        .map_err(|e| format!("Stream request to {} failed: {}", url, e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let raw = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", status.as_u16(), &raw[..raw.len().min(300)]));
+    }
+
+    use futures_util::StreamExt;
+    let mut full = String::new();
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("Stream error: {}", e))?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(nl) = buf.find('\n') {
+            let line = buf[..nl].trim().to_string();
+            buf = buf[nl + 1..].to_string();
+
+            if line.is_empty() || line.starts_with(':') { continue; }
+            if let Some(data) = line.strip_prefix("data: ") {
+                if data == "[DONE]" { continue; }
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(t) = val["choices"][0]["delta"]["content"].as_str() {
+                        full.push_str(t);
+                        on_chunk(t);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(full)
+}
+
 /// Fetches available chat models from the provider's /models endpoint.
 /// Filters out non-chat models (whisper, tts, embed, guard, realtime, translate).
 /// Used to populate the dynamic model dropdown in Settings → AI.

@@ -1,4 +1,11 @@
 <script lang="ts">
+  /**
+   * GraphView — full-screen interactive force-directed graph of all notes.
+   * Uses D3.js v7 (forceSimulation, zoom, drag). Nodes = notes, links = relationships.
+   * Link types: parent (gray), @-mention (yellow), PDF reference (red).
+   * Click a node to open the note. Drag nodes to rearrange. Scroll to zoom.
+   * Data comes from the `get_graph_data` Rust command.
+   */
   import { onMount, tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { noteStore } from '../stores/notes';

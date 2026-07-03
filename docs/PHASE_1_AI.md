@@ -48,6 +48,7 @@ User action
 | `rebuild_fts()` | Rebuild FTS5 search index |
 | `generate_feynman_prompt(note_id)` | AI generates challenge question |
 | `evaluate_feynman(note_id, explanation)` | AI evaluates user's explanation |
+| `evaluate_feynman_stream(note_id, explanation)` | Streaming version: emits ai-chunk + ai-done events |
 | `get_study_items(note_id)` | All study items for a note |
 | `test_ai_connection()` | Ping API → verify auth + endpoint |
 | `fetch_ai_models()` | GET /models → return available chat models |
@@ -141,9 +142,12 @@ When no API key is configured, `generate_study_questions` extracts questions fro
 
 ## Future Enhancements
 
-- **RAG** — semantic search over note embeddings (table + cosine similarity ready, needs embedding model)
-- **Elaborative Interrogation** — AI asks "why" and "how" questions, not just factual recall
-- **Interleaving** — mixed-topic review sessions based on forgetting curves
-- **Concrete Examples** — AI generates analogies for abstract concepts
-- **Study Statistics** — progress dashboard, streaks, topic mastery tracking
-- **Calendar-aware prioritization** — upcoming exam dates influence what to review
+- **Elaborative Interrogation** ✅ — AI asks "why" and "how" questions, not just factual recall
+- **Interleaving** ✅ — mixed-topic review sessions based on forgetting curves
+- **Concrete Examples** ✅ — AI generates analogies for abstract concepts
+- **Study Statistics** ✅ — progress dashboard, streaks, total reviews, 7-day chart
+- **Calendar-aware prioritization** ✅ — upcoming exam dates influence what to review
+- **Note Search** ✅ — direct substring search across all note content with highlighted snippets
+- **Streaming** ✅ — Feynman evaluation streams token-by-token via SSE
+- **RAG** — semantic search via API embeddings (future enhancement, table + cosine similarity ready)
+- **Dual Coding** ✅ — concept map visual representation (implemented in Phase 3)

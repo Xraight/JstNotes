@@ -10,7 +10,7 @@
 //!
 //! Settings are read from AppSettingsState (persisted with other app settings).
 
-use tauri::State;
+use tauri::{Emitter, State};
 use std::sync::Mutex;
 
 use crate::ai::client::{self, AiConfig, ChatMessage, ModelInfo};
@@ -631,6 +631,56 @@ pub async fn evaluate_feynman(
     ];
 
     client::chat(msgs, &config, 256).await
+}
+
+/// Streaming version of evaluate_feynman. Emits 'ai-chunk' events with text deltas,
+/// then a 'ai-done' event with the full response. Frontend can show text as it arrives.
+#[tauri::command]
+pub async fn evaluate_feynman_stream(
+    app: tauri::AppHandle,
+    note_id: String,
+    user_explanation: String,
+    storage: State<'_, HybridStorage>,
+    settings_state: State<'_, crate::commands::settings::AppSettingsState>,
+) -> Result<(), String> {
+    let config = {
+        let s = settings_state.settings.lock().map_err(|e| format!("{}", e))?;
+        load_config(&s)
+    };
+    if config.api_key.is_empty() || !config.enabled {
+        return Err("Configure AI API key in Settings first".to_string());
+    }
+
+    let note = storage.get_note(&note_id)?.ok_or("Note not found")?;
+    let content = storage.get_note_content(&note_id)?.unwrap_or_default();
+    let note_text: String = if content.len() > 800 {
+        format!("{}…", &content[..800])
+    } else { content.clone() };
+
+    let pdf_refs = storage.db.get_pdf_references_for_note(&note_id).map_err(|e| format!("{}", e))?;
+    let mut pdf_ctx = String::new();
+    if !pdf_refs.is_empty() {
+        pdf_ctx.push_str("Linked PDF pages: ");
+        for r in &pdf_refs { pdf_ctx.push_str(&format!("p.{} {}, ", r.page, r.label)); }
+    }
+
+    let msgs = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: "You are a supportive study coach. Give conversational feedback in 2-3 paragraphs. RESPOND IN THE SAME LANGUAGE AS THE USER.".to_string(),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: format!("I'm practicing the Feynman technique. Note content:\n\n{}{}\n\nMy explanation:\n\n{}\n\nGive me feedback.", note_text, pdf_ctx, user_explanation),
+        },
+    ];
+
+    let full = client::stream_chat(msgs, &config, 256, |chunk| {
+        let _ = app.emit("ai-chunk", chunk.to_string());
+    }).await?;
+
+    let _ = app.emit("ai-done", full);
+    Ok(())
 }
 
 #[tauri::command]

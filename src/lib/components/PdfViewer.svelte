@@ -37,6 +37,7 @@
   let pdfDoc: any = null;
 
   let activeTool = $state<'highlight' | 'note' | 'cursor'>('cursor');
+  let highlightColor = $state('#E94560');
   let selectionStart: { x: number; y: number } | null = null;
   let selectionPreview: { page: number; x: number; y: number; w: number; h: number } | null = $state(null);
 
@@ -223,6 +224,34 @@
 
       requestAnimationFrame(() => setupObserver());
       noteStore.loadNoteTitles();
+
+      // Extract outline with proper page numbers
+      (async () => {
+        try {
+          const raw = await pdfDoc.getOutline();
+          if (!raw || raw.length === 0) { pdfStore.pdfOutline = []; return; }
+          const result: Array<{ title: string; page: number; depth: number }> = [];
+
+          async function flatten(items: any[], depth: number) {
+            for (const item of items) {
+              let pageNum = -1;
+              if (item.dest) {
+                const dest = Array.isArray(item.dest) ? item.dest[0] : item.dest;
+                if (dest && typeof dest === 'object' && typeof dest.num === 'number' && typeof dest.gen === 'number') {
+                  try { pageNum = await pdfDoc.getPageIndex(dest); } catch { pageNum = -1; }
+                } else if (typeof dest === 'number') {
+                  pageNum = dest - 1;
+                }
+              }
+              result.push({ title: item.title, page: pageNum, depth });
+              if (item.items) await flatten(item.items, depth + 1);
+            }
+          }
+
+          await flatten(raw, 0);
+          pdfStore.pdfOutline = result;
+        } catch { pdfStore.pdfOutline = []; }
+      })();
 
       if (pdfStore.targetPage) {
         const target = pdfStore.targetPage;
@@ -697,7 +726,7 @@
         pdf_id: pdfStore.activePdf!.id,
         page, annotation_type: activeTool,
         x, y, width: w, height: h,
-        color: '#E94560', content: captured,
+        color: highlightColor, content: captured,
       });
     }
 
@@ -720,7 +749,7 @@
         pdf_id: pdfStore.activePdf!.id,
         page, annotation_type: 'note',
         x, y, width: 0.05, height: 0.05,
-        color: '#E94560', content: `note:${note.id}`,
+        color: highlightColor, content: `note:${note.id}`,
       });
       await pdfStore.linkToNote(note.id, pdfStore.activePdf!.id);
       if (ann) {
@@ -786,10 +815,14 @@
       {/if}
     </div>
     <div class="pdf-toolbar-right">
+      <input type="color" bind:value={highlightColor} class="color-picker" title="Highlight color" />
       <button class="tool-btn" class:active={activeTool === 'cursor'} onclick={() => activeTool = 'cursor'} title="Cursor">↖</button>
       <button class="tool-btn" class:active={activeTool === 'highlight'} onclick={() => activeTool = 'highlight'} title="Highlight">⬛</button>
       <button class="tool-btn" class:active={activeTool === 'note'} onclick={() => activeTool = 'note'} title="Add note">📝</button>
       <button class="tool-btn" onclick={toggleSearch} title="Search PDF">🔍</button>
+      {#if pdfStore.pdfOutline.length > 0}
+        <button class="tool-btn" class:active={pdfStore.showOutline} onclick={() => pdfStore.showOutline = !pdfStore.showOutline} title="Toggle Outline">☰</button>
+      {/if}
       {#if noteStore.selectedNote}
         {@const linked = pdfStore.activePdf && pdfStore.linkedPdfIds.includes(pdfStore.activePdf.id)}
         <button class="tool-btn link-btn" class:active={linked} onclick={async () => {
@@ -929,6 +962,11 @@
   .tool-btn:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+  .color-picker {
+    width: 26px; height: 26px; border: 1px solid var(--border);
+    border-radius: 4px; padding: 2px; cursor: pointer;
+    background: none; flex-shrink: 0;
   }
   .zoom-label {
     font-size: 12px;
