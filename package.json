@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:linux": "npm run build && tauri build --bundles deb,appimage",
+    "build:windows": "npm run build && tauri build --bundles nsis"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",

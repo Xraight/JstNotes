@@ -58,7 +58,38 @@ A note-taking desktop app with cloud AI study tools, PDF annotations, adaptive l
 
 ---
 
-## Setup
+## Download & Install
+
+Pre-built installers are available for Windows and Linux.
+
+### Windows
+
+1. Download `JSTNotes_x.y.z_x64-setup.exe` from [Releases](https://github.com/Xraight/JstNotes/releases)
+2. Double-click the `.exe` → Next → Next → Install
+3. Launch JSTNotes from the Start Menu or desktop shortcut
+
+> No additional dependencies. WebView2 is included in Windows 10 and later.
+
+### Linux
+
+**AppImage** (universal, no install needed):
+```bash
+chmod +x JSTNotes*.AppImage
+./JSTNotes*.AppImage
+```
+
+**Debian/Ubuntu** (.deb):
+```bash
+sudo dpkg -i jstnotes*.deb
+```
+
+### Build from source
+
+See [Development Setup](#development-setup) below.
+
+---
+
+## Development Setup
 
 ### Prerequisites
 
