@@ -1,6 +1,7 @@
 <script lang="ts">
   import { settingsStore } from '../stores/settings';
   import { invoke } from '@tauri-apps/api/core';
+  import { open } from '@tauri-apps/plugin-dialog';
   import { aiStore } from '../stores/ai';
   import { THEME_PRESETS, FONT_PRESETS, type ThemePreset } from '../presets';
   import type { ColorSettings, TypographySettings, LayoutSettings } from '../types';
@@ -8,7 +9,7 @@
   let { onclose }: { onclose: () => void } = $props();
 
   let s = $derived(settingsStore.settings);
-  let activeTab = $state<'presets' | 'colors' | 'typography' | 'layout' | 'css' | 'ai' | 'tips'>('presets');
+  let activeTab = $state<'general' | 'presets' | 'colors' | 'typography' | 'layout' | 'css' | 'ai' | 'tips'>('general');
 
   let tempColors = $state<ColorSettings>({ bg_primary: '', bg_secondary: '', accent: '', highlight: '', text_primary: '', text_secondary: '', border: '' });
   let tempTypo = $state<TypographySettings>({ font_family: '', font_family_mono: '', font_size: 15, line_height: 1.7 });
@@ -21,7 +22,6 @@
   let aiEndpoint = $state('');
   let testResult = $state('');
   let testing = $state(false);
-  let showAdvanced = $state(false);
 
   const PROVIDERS = [
     { id: 'groq', name: 'Groq', price: 'Free', url: 'console.groq.com', desc: 'Llama 3.3 70B. No credit card.', defaultModel: 'llama-3.3-70b-versatile', endpoint: 'https://api.groq.com/openai/v1', badge: '⭐ Best for study' },
@@ -83,7 +83,24 @@
 
   function applyTypo() {
     settingsStore.settings.typography = deepCopy(tempTypo);
-    settingsStore.save();
+    // build JSON directly from local tempTypo to avoid $state proxy issues
+    const fullJson = JSON.stringify({
+      theme: settingsStore.settings.theme,
+      colors: settingsStore.settings.colors,
+      typography: {
+        font_family: tempTypo.font_family,
+        font_family_mono: tempTypo.font_family_mono,
+        font_size: tempTypo.font_size,
+        line_height: tempTypo.line_height,
+      },
+      layout: settingsStore.settings.layout,
+      ai_provider: settingsStore.settings.ai_provider,
+      ai_api_key: settingsStore.settings.ai_api_key,
+      ai_model: settingsStore.settings.ai_model,
+      ai_enabled: settingsStore.settings.ai_enabled,
+      ai_endpoint: settingsStore.settings.ai_endpoint,
+    }, null, 2);
+    settingsStore.saveRawJson(fullJson);
   }
 
   function applyTypoWith(font: string, mono: string) {
@@ -117,7 +134,6 @@
       aiEndpoint = p.endpoint;
       aiModel = p.defaultModel;
     }
-    saveAiSettings();
   }
 
   async function testConnection() {
@@ -126,8 +142,7 @@
     try {
       saveAiSettings();
       const r = await invoke('test_ai_connection');
-      const count = await aiStore.fetchModels();
-      testResult = `✅ ${Array.isArray(count) ? count.length : 0} models · ${r.trim()}`;
+      testResult = `✅ Connected: ${r.trim()}`;
     } catch (e: any) {
       testResult = 'Error: ' + (e?.toString() || 'Unknown');
     } finally {
@@ -135,8 +150,52 @@
     }
   }
 
+  async function fetchModels() {
+    testing = true;
+    testResult = 'Fetching models…';
+    try {
+      saveAiSettings();
+      const count = await aiStore.fetchModels();
+      if (aiStore.availableModels.length > 0) {
+        // Populate model field with first found model
+        aiModel = aiStore.availableModels[0].id;
+      }
+      testResult = `✅ ${count} models found`;
+    } catch (e: any) {
+      testResult = 'Error: ' + (e?.toString() || 'Unknown');
+    } finally {
+      testing = false;
+    }
+  }
+
+  function providerEndpoint(): string {
+    const p = PROVIDERS.find(pp => pp.id === aiProvider);
+    return p ? p.endpoint : 'https://api.openai.com/v1';
+  }
+
+  let exporting = $state(false);
+
+  async function exportAll() {
+    const dest = await open({
+      directory: true,
+      multiple: false,
+      title: 'Select export folder',
+    });
+    if (!dest) return;
+    exporting = true;
+    try {
+      const r = await invoke('export_all', { destPath: dest });
+      alert(`Exported ${(r as any).notes_count} notes and ${(r as any).pdfs_count} PDFs to:\n${(r as any).dest_path}`);
+    } catch (e: any) {
+      alert('Export failed: ' + (e?.toString() || 'Unknown error'));
+    } finally {
+      exporting = false;
+    }
+  }
+
   function close() {
     previewPreset = null;
+    settingsStore.save();
     settingsStore.applyTheme();
     onclose();
   }
@@ -164,6 +223,11 @@
         line_height: 1.7,
       },
       layout: { sidebar_width: 280 },
+      ai_provider: 'groq',
+      ai_api_key: '',
+      ai_model: 'llama-3.3-70b-versatile',
+      ai_enabled: true,
+      ai_endpoint: '',
     };
     settingsStore.save();
   }
@@ -188,6 +252,9 @@
     </div>
 
     <div class="tabs">
+      <button class="tab" class:active={activeTab === 'general'} onclick={() => activeTab = 'general'}>
+        General
+      </button>
       <button class="tab" class:active={activeTab === 'presets'} onclick={() => activeTab = 'presets'}>
         Presets
       </button>
@@ -212,6 +279,16 @@
     </div>
 
     <div class="panel-body">
+      {#if activeTab === 'general'}
+        <div class="section">
+          <h3>Export</h3>
+          <p class="hint">Export all your notes and PDFs to a folder of your choice. Notes are saved as individual .md files with YAML frontmatter. PDFs are copied to a <code>pdfs/</code> subfolder.</p>
+          <button class="btn btn-primary" style="margin-top:8px;" onclick={exportAll} disabled={exporting}>
+            {exporting ? 'Exporting…' : '📦 Export All'}
+          </button>
+        </div>
+      {/if}
+
       {#if activeTab === 'presets'}
         <div class="preset-grid" onmouseleave={() => previewPresetTheme(null)}>
           {#each THEME_PRESETS as preset}
@@ -360,7 +437,7 @@
 
       {#if activeTab === 'ai'}
         <div class="section">
-          <h3>1. Choose Provider</h3>
+          <h3>Provider</h3>
 
           <div class="provider-cards">
             {#each PROVIDERS as p}
@@ -380,57 +457,36 @@
             {/each}
           </div>
 
-          <h3 style="margin-top:18px;">2. API Key</h3>
+          <h3>API Key</h3>
           <div class="form-row">
-            <input type="password" bind:value={aiKey} onchange={saveAiSettings} placeholder={`Paste your ${aiProvider === 'groq' ? 'Groq' : aiProvider === 'openai' ? 'OpenAI' : 'OpenCode Go'} API key here…`} />
+            <input type="password" bind:value={aiKey} placeholder="Paste your API key here…" />
           </div>
 
-          <h3 style="margin-top:16px;">3. Model</h3>
-          <div class="form-row">
-            {#if aiStore.availableModels.length > 0}
-              <select bind:value={aiModel} onchange={saveAiSettings}>
-                {#each aiStore.availableModels as m}
-                  <option value={m.id}>{m.name}</option>
-                {/each}
-              </select>
-            {:else}
-              <input type="text" bind:value={aiModel} onchange={saveAiSettings}
-                placeholder={aiProvider === 'groq' ? 'llama-3.3-70b-versatile' : 'model-id'} />
-              <p class="hint" style="margin-top:4px">Click Test to auto-load available models</p>
-            {/if}
+          <h3>Model</h3>
+          <div class="form-row" style="display:flex;gap:8px;align-items:start;">
+            <input type="text" bind:value={aiModel} class="flex-1" style="flex:1;" placeholder={aiProvider === 'groq' ? 'llama-3.3-70b-versatile' : 'model-id'} />
+            <button class="study-btn" onclick={fetchModels} disabled={!aiKey}>Fetch</button>
           </div>
 
-          <div class="test-row" style="margin-bottom:8px;">
+          <h3>Endpoint</h3>
+          <div class="form-row">
+            <input type="text" bind:value={aiEndpoint} placeholder={providerEndpoint()} />
+          </div>
+
+          <div class="test-row" style="margin-top:12px;">
             <label class="checkbox-label">
-              <input type="checkbox" bind:checked={aiEnabled} onchange={saveAiSettings} />
+              <input type="checkbox" bind:checked={aiEnabled} />
               Enable AI
             </label>
             <button class="study-btn" onclick={testConnection} disabled={testing || !aiKey}>
               {testing ? '…' : 'Test'}
             </button>
             {#if testResult}
-              <span class="test-result" class:ok={testResult.startsWith('Connected')}>{testResult}</span>
+              <span class="test-result" class:ok={testResult.startsWith('✅ Connected')}>{testResult}</span>
             {/if}
           </div>
 
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="advanced-toggle" onclick={() => showAdvanced = !showAdvanced} onkeydown={(e) => e.key === 'Enter' && (showAdvanced = !showAdvanced)}>
-            {showAdvanced ? '▼' : '▶'} Advanced
-          </div>
-          {#if showAdvanced}
-            <div class="form-row">
-              <label>Endpoint</label>
-              <input type="text" bind:value={aiEndpoint} onchange={saveAiSettings} />
-            </div>
-            <div class="form-row">
-              <label>Custom provider</label>
-              <input type="text" value={aiProvider} onchange={(e) => { aiProvider = e.currentTarget.value; saveAiSettings(); }} />
-            </div>
-          {/if}
-
-          <p class="hint" style="margin-top:12px">
-            Notes are sent to the configured API endpoint.
-          </p>
+          <button class="btn btn-primary" style="margin-top:14px;width:100%;" onclick={saveAiSettings}>Save AI Config</button>
         </div>
       {/if}
 

@@ -70,14 +70,23 @@ impl Note {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
+    #[serde(default)]
     pub theme: String,
+    #[serde(default)]
     pub colors: ColorSettings,
+    #[serde(default)]
     pub typography: TypographySettings,
+    #[serde(default)]
     pub layout: LayoutSettings,
+    #[serde(default)]
     pub ai_provider: String,
+    #[serde(default)]
     pub ai_api_key: String,
+    #[serde(default)]
     pub ai_model: String,
+    #[serde(default)]
     pub ai_enabled: bool,
+    #[serde(default)]
     pub ai_endpoint: String,
 }
 

@@ -1,6 +1,23 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { AppSettings } from '../types';
 
+const FONT_GOOGLE_MAP: Record<string, string> = {
+  "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif": 'Inter:wght@400;500;600;700',
+  "'Merriweather', Georgia, 'Times New Roman', serif": 'Merriweather:wght@400;700',
+  "'Space Mono', 'Courier New', monospace": 'Space+Mono:wght@400;700',
+  "'Ubuntu', 'Segoe UI', sans-serif": 'Ubuntu:wght@400;500;700',
+  "'Atkinson Hyperlegible', sans-serif": 'Atkinson+Hyperlegible:wght@400;700',
+};
+
+const MONO_GOOGLE_MAP: Record<string, string> = {
+  "'JetBrains Mono', 'Fira Code', monospace": 'JetBrains+Mono:wght@400;500;700',
+  "'Fira Code', 'JetBrains Mono', monospace": 'Fira+Code:wght@400;500;700',
+  "'Space Mono', 'Courier New', monospace": 'Space+Mono:wght@400;700',
+  "'Ubuntu Mono', 'Fira Code', monospace": 'Ubuntu+Mono:wght@400;700',
+  "'IBM Plex Mono', 'JetBrains Mono', monospace": 'IBM+Plex+Mono:wght@400;500;700',
+  "'Source Code Pro', 'Fira Code', monospace": 'Source+Code+Pro:wght@400;500;700',
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   colors: {
@@ -31,24 +48,94 @@ const DEFAULT_SETTINGS: AppSettings = {
 class SettingsStore {
   settings = $state<AppSettings>(DEFAULT_SETTINGS);
   private styleTag: HTMLStyleElement | null = null;
+  private loadedFonts = new Set<string>();
+
+  private ensureFontLoaded(family: string, map: Record<string, string>) {
+    const gf = map[family];
+    if (!gf || this.loadedFonts.has(gf)) return;
+    this.loadedFonts.add(gf);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${gf}&display=swap`;
+    document.head.appendChild(link);
+  }
 
   async load() {
     try {
-      const s = await invoke<AppSettings>('get_settings');
-      this.settings = { ...DEFAULT_SETTINGS, ...s };
+      const raw = await invoke<string>('get_settings_raw');
+      const parsed = JSON.parse(raw) as AppSettings;
+      this.settings = {
+        ...DEFAULT_SETTINGS,
+        theme: parsed.theme,
+        colors: { ...DEFAULT_SETTINGS.colors, ...parsed.colors },
+        typography: { ...DEFAULT_SETTINGS.typography, ...parsed.typography },
+        layout: { ...DEFAULT_SETTINGS.layout, ...parsed.layout },
+        ai_provider: parsed.ai_provider ?? DEFAULT_SETTINGS.ai_provider,
+        ai_api_key: parsed.ai_api_key ?? DEFAULT_SETTINGS.ai_api_key,
+        ai_model: parsed.ai_model ?? DEFAULT_SETTINGS.ai_model,
+        ai_enabled: parsed.ai_enabled ?? DEFAULT_SETTINGS.ai_enabled,
+        ai_endpoint: parsed.ai_endpoint ?? DEFAULT_SETTINGS.ai_endpoint,
+      };
     } catch {
-      this.settings = DEFAULT_SETTINGS;
+      this.settings = { ...DEFAULT_SETTINGS };
     }
     this.applyTheme();
   }
 
   async save() {
     this.applyTheme();
+    const s = this.settings;
+    const plain: AppSettings = {
+      theme: s.theme,
+      colors: { ...s.colors },
+      typography: { ...s.typography },
+      layout: { ...s.layout },
+      ai_provider: s.ai_provider,
+      ai_api_key: s.ai_api_key,
+      ai_model: s.ai_model,
+      ai_enabled: s.ai_enabled,
+      ai_endpoint: s.ai_endpoint,
+    };
     try {
-      const plain = JSON.parse(JSON.stringify(this.settings));
-      this.settings = await invoke<AppSettings>('save_settings', {
+      const saved = await invoke<AppSettings>('save_settings', {
         newSettings: plain,
       });
+      this.settings = {
+        ...DEFAULT_SETTINGS,
+        theme: saved.theme,
+        colors: { ...DEFAULT_SETTINGS.colors, ...saved.colors },
+        typography: { ...DEFAULT_SETTINGS.typography, ...saved.typography },
+        layout: { ...DEFAULT_SETTINGS.layout, ...saved.layout },
+        ai_provider: saved.ai_provider ?? DEFAULT_SETTINGS.ai_provider,
+        ai_api_key: saved.ai_api_key ?? DEFAULT_SETTINGS.ai_api_key,
+        ai_model: saved.ai_model ?? DEFAULT_SETTINGS.ai_model,
+        ai_enabled: saved.ai_enabled ?? DEFAULT_SETTINGS.ai_enabled,
+        ai_endpoint: saved.ai_endpoint ?? DEFAULT_SETTINGS.ai_endpoint,
+      };
+    } catch {
+      // keep local state even if save fails
+    }
+  }
+
+  async saveRawJson(jsonContent: string) {
+    this.applyTheme();
+    try {
+      const saved = await invoke<string>('save_settings_raw', {
+        jsonContent: jsonContent,
+      });
+      const parsed = JSON.parse(saved);
+      this.settings = {
+        ...DEFAULT_SETTINGS,
+        theme: parsed.theme,
+        colors: { ...DEFAULT_SETTINGS.colors, ...parsed.colors },
+        typography: { ...DEFAULT_SETTINGS.typography, ...parsed.typography },
+        layout: { ...DEFAULT_SETTINGS.layout, ...parsed.layout },
+        ai_provider: parsed.ai_provider ?? DEFAULT_SETTINGS.ai_provider,
+        ai_api_key: parsed.ai_api_key ?? DEFAULT_SETTINGS.ai_api_key,
+        ai_model: parsed.ai_model ?? DEFAULT_SETTINGS.ai_model,
+        ai_enabled: parsed.ai_enabled ?? DEFAULT_SETTINGS.ai_enabled,
+        ai_endpoint: parsed.ai_endpoint ?? DEFAULT_SETTINGS.ai_endpoint,
+      };
     } catch {
       // keep local state even if save fails
     }
@@ -70,6 +157,8 @@ class SettingsStore {
     root.style.setProperty('--editor-line-height', `${s.typography.line_height}`);
     root.style.setProperty('--sidebar-width', `${s.layout.sidebar_width}px`);
     root.setAttribute('data-theme', s.theme);
+    this.ensureFontLoaded(s.typography.font_family, FONT_GOOGLE_MAP);
+    this.ensureFontLoaded(s.typography.font_family_mono, MONO_GOOGLE_MAP);
   }
 
   applyTheme() {
