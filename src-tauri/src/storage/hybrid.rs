@@ -109,4 +109,52 @@ impl HybridStorage {
             .build_tree()
             .map_err(|e| format!("DB error: {}", e))
     }
+
+    pub fn get_note_content(&self, note_id: &str) -> Result<Option<String>, String> {
+        let note = match self.db.get_note(note_id).map_err(|e| format!("DB error: {}", e))? {
+            Some(n) => n,
+            None => return Ok(None),
+        };
+        let md_path = MarkdownStorage::get_md_path(&self.notes_dir, note_id);
+        if MarkdownStorage::note_exists(&md_path) {
+            return Ok(Some(MarkdownStorage::read_note(&md_path).unwrap_or_default()));
+        }
+        Ok(Some(String::new()))
+    }
+
+    pub fn upsert_embedding(&self, note_id: &str, embedding: &[f32]) -> Result<(), String> {
+        self.db.upsert_embedding(note_id, embedding).map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn get_all_embeddings(&self) -> Result<Vec<(String, Vec<f32>)>, String> {
+        self.db.get_all_embeddings().map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn save_flashcards(&self, cards: &[crate::ai::models::FlashcardInput]) -> Result<usize, String> {
+        self.db.save_flashcards(cards).map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn get_flashcards_for_note(&self, note_id: &str) -> Result<Vec<Flashcard>, String> {
+        self.db.get_flashcards_for_note(note_id).map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn delete_flashcards_for_note(&self, note_id: &str) -> Result<(), String> {
+        self.db.delete_flashcards_for_note(note_id).map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn save_study_items(&self, items: &[crate::ai::study::StudyItem]) -> Result<usize, String> {
+        self.db.save_study_items(items).map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn get_due_study_items(&self) -> Result<Vec<crate::ai::study::StudyItem>, String> {
+        self.db.get_due_study_items().map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn update_study_item_review(&self, id: &str, interval_days: i32, ease_factor: f64, repetitions: i32, next_review: &str) -> Result<(), String> {
+        self.db.update_study_item_review(id, interval_days, ease_factor, repetitions, next_review).map_err(|e| format!("DB error: {}", e))
+    }
+
+    pub fn get_study_items_for_note(&self, note_id: &str) -> Result<Vec<crate::ai::study::StudyItem>, String> {
+        self.db.get_study_items_for_note(note_id).map_err(|e| format!("DB error: {}", e))
+    }
 }

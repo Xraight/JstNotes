@@ -1,7 +1,8 @@
-pub struct ModelManager;
+use serde::{Deserialize, Serialize};
 
-impl ModelManager {
-    pub fn new() -> Self {
-        ModelManager
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlashcardInput {
+    pub note_id: String,
+    pub question: String,
+    pub answer: String,
 }

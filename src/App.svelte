@@ -4,9 +4,16 @@
   import NoteTree from './lib/components/NoteTree.svelte';
   import Calendar from './lib/components/Calendar.svelte';
   import Editor from './lib/components/Editor.svelte';
+  import PdfViewer from './lib/components/PdfViewer.svelte';
   import Settings from './lib/components/Settings.svelte';
+  import PdfLibrary from './lib/components/PdfLibrary.svelte';
+  import StudyHome from './lib/components/StudyHome.svelte';
+  import GraphView from './lib/components/GraphView.svelte';
+  import MiniConceptMap from './lib/components/MiniConceptMap.svelte';
   import { noteStore } from './lib/stores/notes';
   import { settingsStore } from './lib/stores/settings';
+  import { pdfStore } from './lib/stores/pdf';
+  import { aiStore } from './lib/stores/ai';
 
   let tree = $derived(noteStore.tree);
   let breadcrumbs = $derived(noteStore.breadcrumbs);
@@ -17,6 +24,8 @@
   let settingsOpen = $state(false);
   let error = $state<string | null>(null);
   let dragging = $state(false);
+  let pdfWidth = $state(50);
+  let editorAreaRef = $state<HTMLDivElement>();
 
   onMount(async () => {
     await settingsStore.load();
@@ -25,7 +34,24 @@
     } catch (e: unknown) {
       error = `Error: ${e instanceof Error ? e.message : String(e)}`;
     }
+    await pdfStore.loadPdfs();
     if (sidebarRef) calRef = sidebarRef.querySelector<HTMLElement>('[data-calendar]');
+  });
+
+  $effect(() => {
+    if (selectedNote) {
+      pdfStore.loadLinkedPdfs(selectedNote.id);
+    } else {
+      pdfStore.linkedPdfIds = [];
+    }
+  });
+
+  // Close Study Home when PDF is opened (mutually exclusive views)
+  $effect(() => {
+    if (pdfStore.isOpen) {
+      aiStore.studyPanelOpen = false;
+      aiStore.graphOpen = false;
+    }
   });
 
   function startDrag(e: MouseEvent) {
@@ -55,6 +81,27 @@
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }
+
+  function startPdfResize(e: MouseEvent) {
+    dragging = true;
+    const startX = e.clientX;
+    const startWidth = pdfWidth;
+
+    function onMouseMove(ev: MouseEvent) {
+      const areaW = editorAreaRef?.clientWidth || 1;
+      const delta = ((startX - ev.clientX) / areaW) * 100;
+      pdfWidth = Math.max(30, Math.min(70, startWidth + delta));
+    }
+
+    function onMouseUp() {
+      dragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    }
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
 </script>
 
 {#if error}
@@ -72,6 +119,7 @@
     </div>
     <NoteTree nodes={tree} />
     <Calendar />
+    <PdfLibrary />
     <button class="sidebar-resize-handle"
       onmousedown={startDrag}
       aria-label="Resize sidebar"
@@ -83,9 +131,54 @@
   </div>
   <div class="main">
     <Breadcrumbs items={breadcrumbs} />
-    <div class="editor-area">
-      <Editor />
+    {#if aiStore.studyPanelOpen}
+      <StudyHome />
+    {:else if aiStore.graphOpen}
+      <GraphView />
+    {:else}
+    <div class="editor-area" class:with-pdf={pdfStore.isOpen} bind:this={editorAreaRef}>
+      <div class="editor-wrap">
+        <Editor />
+      </div>
+      {#if pdfStore.isOpen}
+        <button class="pdf-divider"
+          onmousedown={startPdfResize}
+          aria-label="Resize PDF panel"
+          onkeydown={(e) => {
+            if (e.key === 'ArrowLeft') pdfWidth = Math.max(30, pdfWidth - 5);
+            if (e.key === 'ArrowRight') pdfWidth = Math.min(70, pdfWidth + 5);
+          }}>
+        </button>
+      {/if}
+      <PdfViewer pdfWidth={pdfWidth} />
+      {#if selectedNote}
+        <div class="context-panel">
+          {#if pdfStore.isOpen && pdfStore.showOutline && pdfStore.pdfOutline.length > 0}
+            <div class="outline-view">
+              <div class="outline-view-header">
+                Outline
+                <button class="outline-close" onclick={() => pdfStore.showOutline = false}>✕</button>
+              </div>
+              <div class="outline-view-body">
+                {#each pdfStore.pdfOutline as item}
+                  <button class="outline-view-item" style="padding-left: {item.depth * 14 + 12}px"
+                    onclick={() => {
+                      const el = document.querySelector(`[data-page="${item.page + 1}"]`) as HTMLElement | null;
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}>
+                    {item.title}
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          <div class="context-fill">
+            <MiniConceptMap context={pdfStore.isOpen} compact={pdfStore.isOpen} />
+          </div>
+        </div>
+      {/if}
     </div>
+    {/if}
   </div>
   <div class="status-bar">
     <span class="status-left">
@@ -178,7 +271,66 @@
   .editor-area {
     flex: 1;
     overflow-y: auto;
+    display: flex;
   }
+  .editor-area.with-pdf {
+    overflow-y: hidden;
+  }
+  .pdf-divider {
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    border: none;
+    padding: 0;
+    outline: none;
+    flex-shrink: 0;
+    z-index: 5;
+  }
+  .pdf-divider:hover,
+  .dragging .pdf-divider {
+    background: var(--highlight);
+    opacity: 0.3;
+  }
+  .editor-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .context-panel {
+    width: clamp(200px, 20%, 320px); flex-shrink: 0;
+    display: flex; flex-direction: column;
+    border-left: 1px solid var(--border);
+    background: var(--bg-primary); overflow: hidden;
+  }
+  .outline-view {
+    display: flex; flex-direction: column; height: 100%;
+  }
+  .outline-view-header {
+    padding: 8px 12px; font-size: 11px; font-weight: 600;
+    color: var(--text-secondary); text-transform: uppercase;
+    letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .outline-close {
+    background: none; border: none; cursor: pointer;
+    font-size: 13px; color: var(--text-secondary); font-family: inherit;
+    padding: 2px 4px; border-radius: 2px;
+  }
+  .outline-close:hover { background: var(--accent); color: var(--text-primary); }
+  .outline-view-body {
+    flex: 1; overflow-y: auto; padding: 4px 0;
+  }
+  .outline-view-item {
+    display: block; width: 100%; text-align: left;
+    background: none; border: none; cursor: pointer;
+    font-size: 12px; color: var(--text-primary); font-family: inherit;
+    padding: 3px 12px; line-height: 1.6;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .outline-view-item:hover { background: var(--accent); }
+  .context-fill { flex: 1; overflow: hidden; min-height: 0; }
   .status-bar {
     display: flex;
     align-items: center;

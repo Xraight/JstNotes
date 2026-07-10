@@ -64,6 +64,11 @@ export interface AppSettings {
   colors: ColorSettings;
   typography: TypographySettings;
   layout: LayoutSettings;
+  ai_provider: string;
+  ai_api_key: string;
+  ai_model: string;
+  ai_enabled: boolean;
+  ai_endpoint: string;
 }
 
 export interface CalendarEvent {
@@ -74,4 +79,115 @@ export interface CalendarEvent {
   completed: boolean;
   note_ids: string[];
   created_at: string;
+}
+
+export interface PdfMetadata {
+  id: string;
+  title: string | null;
+  file_path: string;
+  page_count: number;
+  text: string | null;
+  created_at: string;
+}
+
+export interface PdfAnnotation {
+  id: string;
+  pdf_id: string;
+  page: number;
+  annotation_type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string | null;
+  content: string | null;
+  created_at: string;
+}
+
+export interface AnnotationInput {
+  pdf_id: string;
+  page: number;
+  annotation_type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string | null;
+  content: string | null;
+}
+
+export interface PdfReference {
+  id: string;
+  note_id: string;
+  pdf_id: string;
+  page: number;
+  page_end: number | null;
+  label: string;
+  annotation_id: string | null;
+  created_at: string;
+}
+
+export interface CreatePdfReferenceInput {
+  note_id: string;
+  pdf_id: string;
+  page: number;
+  page_end: number | null;
+  label: string;
+  annotation_id: string | null;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface Flashcard {
+  id: string;
+  note_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  reviewed: number;
+  difficulty: number;
+}
+
+export interface OllamaModel {
+  name: string;
+  modified_at: string | null;
+  size: number | null;
+}
+
+export interface StudyItem {
+  id: string;
+  note_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  next_review: string;
+  interval_days: number;
+  ease_factor: number;
+  repetitions: number;
+  reviewed_at: string | null;
+  source_page: number | null;
+  days_until_event: number | null;
+}
+
+export interface StudyStats {
+  reviews_today: number;
+  streak_days: number;
+  total_reviews: number;
+  due_count: number;
+  today_date: string;
+  last_7_days: DayCount[];
+}
+
+export interface DayCount {
+  date: string;
+  count: number;
+}
+
+export interface SearchResult {
+  id: string;
+  title: string;
+  snippet: string;
 }

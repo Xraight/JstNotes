@@ -8,11 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:linux": "npm run build && tauri build --bundles deb,appimage",
+    "build:windows": "npm run build && tauri build --bundles nsis"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tsconfig/svelte": "^5.0.8",
+    "@types/d3": "^7.4.3",
     "@types/node": "^24.12.3",
     "svelte": "^5.55.5",
     "svelte-check": "^4.4.8",
@@ -24,8 +27,10 @@
     "@tauri-apps/cli": "^2.11.2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-fs": "^2.5.1",
+    "d3": "^7.9.0",
     "esbuild": "^0.28.0",
     "katex": "^0.17.0",
-    "marked": "^18.0.4"
+    "marked": "^18.0.4",
+    "pdfjs-dist": "^6.0.227"
   }
 }

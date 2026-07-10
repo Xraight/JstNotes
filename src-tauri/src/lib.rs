@@ -1,3 +1,11 @@
+//! JSTNotes — Tauri application entry point.
+//!
+//! Manages global state:
+//!   - HybridStorage (SQLite DB + Markdown files)
+//!   - AppSettingsState (colors, typography, layout, AI config)
+//!
+//! Registers 35+ IPC commands across notes, PDF, AI, calendar, and settings.
+
 mod commands;
 mod models;
 mod pdf;
@@ -18,6 +26,10 @@ pub fn run() {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
                         .level(log::LevelFilter::Info)
+                        .filter(|metadata| {
+                            !metadata.target().starts_with("pdf_extract")
+                                && !metadata.target().starts_with("cff_parser")
+                        })
                         .build(),
                 )?;
 
@@ -34,10 +46,12 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).ok();
             let app_dir_str = app_dir.to_string_lossy().to_string();
 
+            // Initialize managed state objects — available to all commands via State<T>.
             let storage = HybridStorage::new(&app_dir_str)
                 .expect("Failed to initialize storage");
             app.manage(storage);
 
+            // Settings loaded from disk, exposed via Mutex for thread-safe mutation.
             let settings = models::load_settings(&app_dir_str);
             app.manage(AppSettingsState {
                 app_dir: app_dir_str.clone(),
@@ -55,10 +69,42 @@ pub fn run() {
             commands::notes::get_children,
             commands::notes::get_breadcrumbs,
             commands::notes::build_tree,
-            commands::ai::generate_flashcards,
+            commands::ai::test_ai_connection,
+            commands::ai::fetch_ai_models,
+            commands::ai::generate_study_questions,
+            commands::ai::generate_elaboration_questions,
+            commands::ai::generate_concrete_example,
+            commands::ai::get_due_reviews,
+            commands::ai::rate_review,
+            commands::ai::get_study_stats,
+            commands::ai::search_notes,
+            commands::ai::rebuild_fts,
+            commands::ai::generate_feynman_prompt,
+            commands::ai::evaluate_feynman,
+            commands::ai::evaluate_feynman_stream,
+            commands::ai::get_study_items,
+            commands::graph::get_graph_data,
+            commands::export::export_all,
+            commands::pdf::list_pdfs,
             commands::pdf::import_pdf,
+            commands::pdf::get_pdf_text,
+            commands::pdf::save_annotation,
+            commands::pdf::get_annotations,
+            commands::pdf::delete_annotation,
+            commands::pdf::update_annotation_content,
+            commands::pdf::get_pdfs_for_note,
+            commands::pdf::link_pdf_to_note,
+            commands::pdf::unlink_pdf_from_note,
+            commands::pdf::delete_pdf,
+            commands::pdf::get_linked_pdf_ids,
+            commands::pdf::create_pdf_reference,
+            commands::pdf::get_pdf_references_for_note,
+            commands::pdf::delete_pdf_reference,
             commands::settings::get_settings,
             commands::settings::save_settings,
+            commands::settings::get_app_dir,
+            commands::settings::save_settings_raw,
+            commands::settings::get_settings_raw,
             commands::calendar::create_calendar_event,
             commands::calendar::get_calendar_events,
             commands::calendar::update_calendar_event,

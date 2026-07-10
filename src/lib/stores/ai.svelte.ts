@@ -1,11 +1,137 @@
-class AIStore {
-  messages = $state<{ role: 'user' | 'assistant'; content: string }[]>([]);
-  isGenerating = $state(false);
+import { invoke } from '@tauri-apps/api/core';
+import type { StudyItem, StudyStats, SearchResult } from '../types';
+import { settingsStore } from './settings';
 
-  async sendMessage(_content: string) {
+class AIStore {
+  studyItems = $state<StudyItem[]>([]);
+  dueReviews = $state<StudyItem[]>([]);
+  isGenerating = $state(false);
+  studyPanelOpen = $state(false);
+  graphOpen = $state(false);
+  lastError = $state('');
+  availableModels = $state<Array<{ id: string; name: string }>>([]);
+  stats = $state<StudyStats | null>(null);
+  searchResults = $state<SearchResult[]>([]);
+  searchQuery = $state('');
+  isSearching = $state(false);
+
+  async searchNotes(query: string) {
+    if (!query.trim()) { this.searchResults = []; return; }
+    this.isSearching = true;
+    try {
+      this.searchResults = await invoke<SearchResult[]>('search_notes', { query });
+    } catch {
+      this.searchResults = [];
+    } finally {
+      this.isSearching = false;
+    }
+  }
+
+  get apiConfigured(): boolean {
+    const s = settingsStore.settings;
+    return !!(s.ai_api_key && s.ai_enabled);
+  }
+
+  async fetchModels(): Promise<number> {
+    try {
+      this.availableModels = await invoke<Array<{ id: string; name: string }>>('fetch_ai_models');
+      return this.availableModels.length;
+    } catch {
+      this.availableModels = [];
+      return 0;
+    }
+  }
+
+  async loadStats() {
+    try {
+      this.stats = await invoke<StudyStats>('get_study_stats');
+    } catch {
+      this.stats = null;
+    }
+  }
+
+  async generateQuestions(noteId: string) {
     this.isGenerating = true;
-    // TODO: Implement AI chat in Phase 1
-    this.isGenerating = false;
+    this.lastError = '';
+    try {
+      const items = await invoke<StudyItem[]>('generate_study_questions', { noteId });
+      this.studyItems = items;
+      await this.loadDueReviews();
+      return items;
+    } catch (e: any) {
+      this.lastError = e?.toString() || 'Generation failed';
+      return [];
+    } finally {
+      this.isGenerating = false;
+    }
+  }
+
+  async generateElaboration(noteId: string) {
+    this.isGenerating = true;
+    this.lastError = '';
+    try {
+      const items = await invoke<StudyItem[]>('generate_elaboration_questions', { noteId });
+      this.studyItems = items;
+      await this.loadDueReviews();
+      return items;
+    } catch (e: any) {
+      this.lastError = e?.toString() || 'Generation failed';
+      return [];
+    } finally {
+      this.isGenerating = false;
+    }
+  }
+
+  async generateExample(noteId: string): Promise<string> {
+    this.isGenerating = true;
+    this.lastError = '';
+    try {
+      return await invoke<string>('generate_concrete_example', { noteId });
+    } catch (e: any) {
+      this.lastError = e?.toString() || 'Generation failed';
+      return '';
+    } finally {
+      this.isGenerating = false;
+    }
+  }
+
+  async loadDueReviews() {
+    try {
+      this.dueReviews = await invoke<StudyItem[]>('get_due_reviews');
+    } catch {
+      this.dueReviews = [];
+    }
+  }
+
+  async rateReview(itemId: string, quality: number) {
+    try {
+      await invoke('rate_review', { itemId, quality });
+      await this.loadDueReviews();
+    } catch (e) {
+      console.error('Rate review failed:', e);
+    }
+  }
+
+  async loadStudyItems(noteId: string) {
+    try {
+      this.studyItems = await invoke<StudyItem[]>('get_study_items', { noteId });
+    } catch {
+      this.studyItems = [];
+    }
+  }
+
+  togglePanel() {
+    this.studyPanelOpen = !this.studyPanelOpen;
+    this.graphOpen = false;
+    if (this.studyPanelOpen) {
+      this.loadDueReviews();
+      this.loadStats();
+    }
+  }
+
+  toggleGraph() {
+    this.graphOpen = !this.graphOpen;
+    this.studyPanelOpen = false;
   }
 }
 

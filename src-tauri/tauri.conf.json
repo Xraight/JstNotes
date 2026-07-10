@@ -36,6 +36,28 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "JSTNotes",
+    "copyright": "© 2024 JSTNotes",
+    "licenseFile": "../LICENSE",
+    "shortDescription": "Study notes with evidence-based techniques",
+    "longDescription": "JSTNotes — note-taking app with PDF viewer, spaced repetition, Feynman technique, graph view, and more.",
+    "category": "Utility",
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
